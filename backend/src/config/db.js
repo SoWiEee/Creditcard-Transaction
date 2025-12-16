@@ -1,19 +1,25 @@
 import pg from 'pg';
-import dotenv from 'dotenv';
-
-dotenv.config();
 
 const { Pool } = pg;
 
-const pool = new Pool({
-    user: process.env.DB_USER || 'postgres',
-    host: process.env.DB_HOST || 'localhost',
-    database: process.env.DB_NAME || 'bank_db',
-    password: process.env.DB_PASSWORD || 'password',
-    port: process.env.DB_PORT || 5432,
-});
+let pool;
 
-// 測試連接
+if (process.env.DATABASE_URL) {
+  // Docker / production
+  pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+  });
+} else {
+  // local dev
+  pool = new Pool({
+    user: process.env.DB_USER || 'cct_user',
+    host: process.env.DB_HOST || 'localhost',
+    database: process.env.DB_NAME || 'creditcard',
+    password: process.env.DB_PASSWORD || 'cct_pass',
+    port: process.env.DB_PORT || 5432,
+  });
+}
+
 pool.on('connect', () => {
   console.log('[V] Database connected successfully');
 });

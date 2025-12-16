@@ -2,7 +2,8 @@ CREATE TABLE IF NOT EXISTS Users (
     user_id INT PRIMARY KEY,
     username VARCHAR(50) NOT NULL,
     balance DECIMAL(10, 2) DEFAULT 0.00,
-    current_points INT DEFAULT 0
+    current_points INT DEFAULT 0,
+    credit_limit DECIMAL(10, 2) DEFAULT 10000.00
 );
 
 CREATE TABLE IF NOT EXISTS Transactions (

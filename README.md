@@ -7,13 +7,11 @@
 # Project Overview
 
 本系統旨在模擬信用卡核心交易流程，包含授權 (Authorization)、結算 (Settlement)、作廢 (Void) 與退款 (Refund)。系統必須嚴格遵守 ACID 原則，確保帳戶餘額與紅利點數在任何交易狀態下的一致性。
-- 前端架構: Vue 3 + Vite + Bun (Single Page Application)
-- 後端架構: Node.js/Bun (REST API)
-- 資料庫: PostgreSQL
+- 前端架構：Vue 3 + Vite + Bun (Single Page Application)
+- 後端架構：Node.js/Bun (REST API)
+- 資料庫：PostgreSQL
 
 # Database Schema
-
-根據提供的 SQL.sql 檔案，資料庫包含兩個核心資料表。
 
 ## Users (使用者)
 

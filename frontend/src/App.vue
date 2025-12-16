@@ -1,3 +1,24 @@
+<template>
+  <div class="app-container">
+    <header>
+      <h1>💳 Bank Dashboard System</h1>
+      <p class="subtitle">Vue 3 + PostgreSQL Transaction Simulator</p>
+    </header>
+
+    <UserProfile :user="user" />
+    <ActionPanel @on-pay="onPay" />
+
+    <div class="main-grid">
+      <TransactionTable 
+        :transactions="transactions" 
+        @on-void="onVoid"
+        @on-refund="onRefund"
+      />
+      <SystemLog :logs="logs" />
+    </div>
+  </div>
+</template>
+
 <script setup>
 import { ref, onMounted, reactive } from 'vue'
 import UserProfile from './components/UserProfile.vue'

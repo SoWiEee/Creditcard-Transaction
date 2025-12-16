@@ -1,4 +1,7 @@
 # Creditcard-Transaction
+
+- [Test Website](https://dbdev.mintice.blog/)
+
 > 信用卡交易與點數系統開發規格書
 
 # Project Overview

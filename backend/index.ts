@@ -17,7 +17,7 @@ app.use(cors({
  * 健康檢查
  * GET /api/health
  */
-app.get("/api/health", (req, res) => {
+app.get("/health", (req, res) => {
   res.json({
     status: "ok",
     time: new Date().toISOString(),
@@ -28,7 +28,7 @@ app.get("/api/health", (req, res) => {
  * 看 Cloudflare / Proxy header
  * GET /api/ip
  */
-app.get("/api/ip", (req, res) => {
+app.get("/ip", (req, res) => {
   res.json({
     ip:
       req.headers["cf-connecting-ip"] ||
@@ -46,7 +46,7 @@ app.get("/api/ip", (req, res) => {
  * 測試 POST
  * POST /api/echo
  */
-app.post("/api/echo", (req, res) => {
+app.post("/echo", (req, res) => {
   res.json({
     you_sent: req.body,
   });

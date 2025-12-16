@@ -59,7 +59,10 @@ export const voidTransaction = async (userId, targetTxId) => {
         const tx = await TxModel.getTransactionById(client, targetTxId);
         if (!tx) throw new Error('Transaction not found');
 
-        // 2. 狀態檢查 (State Machine Rule)
+        // 2. 狀態檢查
+        if (Number(tx.user_id) !== Number(userId)) {
+            throw new Error('Security Alert: You do not own this transaction.');
+        }
         if (tx.status !== 'Pending') {
             throw new Error(`Cannot void transaction with status: ${tx.status}`);
         }
@@ -80,6 +83,11 @@ export const refundTransaction = async (userId, targetTxId) => {
         // 1. 查詢原交易
         const tx = await TxModel.getTransactionById(client, targetTxId);
         if (!tx) throw new Error('Transaction not found');
+
+        // prevent IDOR
+        if (Number(tx.user_id) !== Number(userId)) {
+            throw new Error('Security Alert: Unauthorized refund attempt.');
+        }
 
         // 2. 狀態檢查
         if (tx.status !== 'Paid') {

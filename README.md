@@ -11,6 +11,14 @@
 - 後端架構：Node.js/Bun (REST API)
 - 資料庫：PostgreSQL
 
+# Docker Development
+
+```bash
+git clone https://github.com/SoWiEee/Creditcard-Transaction.git
+cd Creditcard-Transaction
+docker compose up --build
+```
+
 # Database Schema
 
 ## Users (使用者)

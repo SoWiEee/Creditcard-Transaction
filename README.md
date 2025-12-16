@@ -19,6 +19,10 @@ cd Creditcard-Transaction
 docker compose up --build
 ```
 
+- Frontend：http://localhost
+- Backend health check：http://localhost/api/health
+- PostgreSQL：localhost:5432
+
 # Database Schema
 
 ## Users (使用者)

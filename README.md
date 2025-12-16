@@ -36,6 +36,126 @@
 | point_change  |  INT    |  DEFAULT 0  | 該筆交易產生的點數變化   |
 | source_transaction_id   | INT   | NULLABLE  | 僅用於 Refund，記錄原始交易 ID   |
 
+# API Specification
+- 所有 API 回應皆為 JSON 格式。 Base URL: /api
 
+## 取得使用者資訊
 
+- 用於前端初始化 Dashboard，顯示餘額與點數
+- GET /users/:id
+- Request Parameters: id: 使用者 ID (Int)
 
+Response (200 OK)
+```json
+{
+  "user_id": 1,
+  "name": "Alice",
+  "balance": 500.00,
+  "credit_limit": 10000.00,
+  "current_points": 150
+}
+```
+
+## 取得交易列表
+
+- 用於顯示交易歷史紀錄表格。
+- GET /transactions/:user_id
+
+Response (200 OK)
+```json
+[
+    {
+      "transaction_id": 105,
+      "amount": 300.00,
+      "transaction_date": "2023-10-27T10:00:00Z",
+      "status": "Paid",
+      "point_change": 3,
+      "source_transaction_id": null
+    },
+    {
+      "transaction_id": 106,
+      "amount": -5000.00,
+      "transaction_date": "2023-10-28T12:00:00Z",
+      "status": "Refunded",
+      "point_change": -50,
+      "source_transaction_id": 102
+    }
+]
+```
+
+## 新增交易
+
+- 一般消費功能，需檢查信用額度並計算回饋點數。
+- POST /transactions/pay
+- Request Body:
+
+```json
+{
+  "user_id": 4,
+  "amount": 300.00
+}
+```
+
+Response (201 Created)
+```json
+{
+  "success": true,
+  "transaction_id": 105,
+  "message": "Payment successful",
+  "new_balance": 800.00,
+  "points_earned": 3
+}
+```
+
+Error Response (400 Bad Request)
+```json
+{ "success": false, "error": "Insufficient credit limit" }
+```
+
+## 取消交易
+
+- 針對尚未請款 (Pending) 的交易進行作廢。
+- POST /transactions/void
+- Request Body:
+
+```json
+{
+  "user_id": 2,
+  "target_transaction_id": 103
+}
+```
+
+Response (200 OK)
+```json
+{
+  "success": true,
+  "message": "Transaction 103 voided successfully"
+}
+```  
+
+## 退款交易
+
+- 針對已請款 (Paid) 的交易進行退貨，需執行「補償交易」(Compensating Transaction) 並扣回點數。
+- POST /transactions/refund
+- Request Body:
+
+```json
+{
+  "user_id": 3,
+  "target_transaction_id": 102
+}
+```
+
+Response (200 OK)
+```json
+{
+  "success": true,
+  "new_transaction_id": 106,
+  "message": "Refund processed successfully"
+}
+```
+
+Error Response (409 Conflict)
+```json
+{ "success": false, "error": "Insufficient points for refund rollback" }
+```

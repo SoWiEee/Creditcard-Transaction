@@ -1,8 +1,6 @@
-version: "3.9"
-
 services:
   db:
-    image: postgres:15
+    image: postgres:14
     environment:
       POSTGRES_DB: creditcard
       POSTGRES_USER: cct_user

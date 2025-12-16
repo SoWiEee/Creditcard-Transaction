@@ -17,6 +17,32 @@ const withTransaction = async (callback) => {
     }
 };
 
+export const getUserDetails = async (userId) => {
+    const client = await pool.connect();
+    try {
+        const user = await UserModel.getUserById(client, userId);
+
+        if (!user) {
+            throw new Error('User not found');
+        }
+
+        // 可以在這裡過濾掉敏感資訊 (例如密碼 hash)，如果有的話
+        return user; 
+    } finally {
+        client.release();
+    }
+};
+
+export const getTransactionHistory = async (userId) => {
+    const client = await pool.connect();
+    try {
+        const transactions = await TxModel.getTransactionsByUserId(client, userId);
+        return transactions;
+    } finally {
+        client.release();
+    }
+};
+
 export const processPayment = async (userId, amount) => {
     return withTransaction(async (client) => {
         // 1. 檢查使用者

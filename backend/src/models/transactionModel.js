@@ -15,6 +15,25 @@ export const getTransactionById = async (client, transactionId) => {
 	return result.rows[0];
 };
 
+// 取得特定使用者的所有交易，按時間倒序排列
+export const getTransactionsByUserId = async (client, userId) => {
+  const query = `
+    SELECT 
+      transaction_id, 
+      user_id, 
+      amount, 
+      status, 
+      point_change, 
+      created_at,
+      source_transaction_id
+    FROM Transactions 
+    WHERE user_id = $1 
+    ORDER BY created_at DESC
+  `;
+  const result = await client.query(query, [userId]);
+  return result.rows;
+};
+
 export const updateTransactionStatus = async (client, transactionId, newStatus) => {
 	const query = `UPDATE Transactions SET status = $1 WHERE transaction_id = $2`;
 	await client.query(query, [newStatus, transactionId]);

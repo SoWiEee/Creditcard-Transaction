@@ -5,5 +5,8 @@ COPY package.json bun.lock ./
 RUN bun install
 
 COPY . .
+
+RUN chmod +x start.sh
+
 EXPOSE 3000
-CMD ["bun", "index.js"]
+CMD ["./start.sh"]

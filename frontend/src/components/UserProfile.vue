@@ -11,7 +11,7 @@ defineProps({
   <div class="stats-container">
     <div class="card stat-card">
       <div class="stat-label">Current Balance</div>
-      <div class="stat-value balance">${{ user.balance.toFixed(2) }}</div>
+      <div class="stat-value balance">${{ Number(user.balance).toFixed(2) }}</div>
     </div>
 
     <div class="card stat-card">

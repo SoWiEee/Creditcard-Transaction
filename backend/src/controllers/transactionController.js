@@ -40,9 +40,16 @@ export const getUserTransactions = async (req, res) => {
 
 export const pay = async (req, res) => {
 	try {
-		const { user_id, amount } = req.body;
-		const result = await TransactionService.processPayment(user_id, amount);
-		res.status(201).json(result); 
+		const { user_id, amount, merchant, use_points } = req.body;
+
+		const result = await TransactionService.processPayment(
+			user_id, 
+			amount, 
+			merchant || 'Unknown',
+			use_points || false
+		);
+
+		res.status(201).json(result);
 	} catch (error) {
 		res.status(400).json({ error: error.message, logs: error.logs || [] });
 	}

@@ -1,5 +1,5 @@
 <template>
-		<div class="app-container">
+	<div class="app-container">
 		<header class="app-header">
 			<div class="header-left">
 				<h1>💳 Transaction System Simulator</h1>
@@ -113,17 +113,23 @@ onMounted(() => {
 
 // call API
 
-const onPay = async (amount) => {
-	// 顯示前端請求 Log
+const onPay = async (payload) => {
+	const { amount, merchant, usePoints } = payload
+
 	logs.value.push({ 
 		time: new Date().toLocaleTimeString(), 
 		type: 'info', 
-		message: `action_type:PAY, user_id: ${currentUserId.value}, amount: ${amount}` 
+		message: `action_type:PAY, user_id: ${currentUserId.value}, merchant: ${merchant}, amount: ${amount}, use_points: ${usePoints}` 
 	})
 
 	try {
-		const res = await api.pay({ user_id: currentUserId.value, amount: Number(amount) })
-		// 將後端回傳的 logs 塞入前端
+		const res = await api.pay({ 
+			user_id: currentUserId.value, 
+			amount: Number(amount),
+			merchant,
+			use_points: usePoints
+		})
+
 		appendBackendLogs(res.logs) 
 		await refreshData()
 	} catch (error) {

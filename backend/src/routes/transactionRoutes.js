@@ -6,9 +6,9 @@ import { paySchema, transactionActionSchema } from '../utils/schemas.js';
 const router = express.Router();
 
 router.get('/users/:id', txController.getUserInfo); 
-router.get('/transactions/:userId', txController.getUserTransactions);
-router.post('/pay', validate(paySchema), txController.pay);
-router.post('/void', validate(transactionActionSchema), txController.voidTx);
-router.post('/refund', validate(transactionActionSchema), txController.refundTx);
+router.get('/transactions/:user_id', txController.getUserTransactions);
+router.post('/transactions/pay', validate(paySchema), txController.pay);
+router.post('/transactions/void', validate(transactionActionSchema), txController.voidTx);
+router.post('/transactions/refund', validate(transactionActionSchema), txController.refundTx);
 
 export default router;

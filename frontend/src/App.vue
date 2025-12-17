@@ -25,7 +25,7 @@ import UserProfile from './components/UserProfile.vue'
 import ActionPanel from './components/ActionPanel.vue'
 import TransactionTable from './components/TransactionTable.vue'
 import SystemLog from './components/SystemLog.vue'
-import api from './api/transactionService' // 引入剛寫好的 Service
+import api from './api/transactionService'
 
 // 目前模擬登入的使用者 ID (固定為 1，之後可做登入頁)
 const CURRENT_USER_ID = 1
@@ -47,15 +47,16 @@ const addLog = (type, message) => {
   logs.value.push({ time, type, message })
 }
 
-// 核心資料獲取函式
+// fetch data
 const refreshData = async () => {
   loading.value = true
   try {
-    // 並行請求，加快速度
     const [userData, txData] = await Promise.all([
       api.getUser(CURRENT_USER_ID),
       api.getTransactions(CURRENT_USER_ID)
     ])
+    
+    addLog('info', `[DEBUG] Send Reuqest to refresh user ${CURRENT_USER_ID}`)
     
     user.value = userData
     transactions.value = txData // 假設後端回傳的是陣列

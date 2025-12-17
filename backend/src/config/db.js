@@ -17,6 +17,9 @@ if (process.env.DATABASE_URL) {
     database: process.env.DB_NAME || 'creditcard',
     password: process.env.DB_PASSWORD || 'cct_pass',
     port: process.env.DB_PORT || 5432,
+    max: 20,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 2000,
   });
 }
 

@@ -18,4 +18,4 @@ echo "🌱 Running seed..."
 bun src/utils/seed.js
 
 echo "🚀 Starting backend..."
-bun index.js
+bun src/app.js

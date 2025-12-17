@@ -6,18 +6,28 @@ const app = express();
 const PORT = 3000;
 
 // Middleware
-app.use(cors()); // 允許前端 Vue 呼叫
+app.use((req, res, next) => {
+  console.log(`[Incoming] ${req.method} ${req.url}`);
+  next();
+});
+
+app.use(cors({
+  origin: true,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json());
 
 // Routes
-app.use('/api/transactions', transactionRoutes);
+app.use('/api', transactionRoutes);
 
-// Global Error Handler
-app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({ error: 'Internal Server Error' });
+// 404 Handler
+app.use((req, res) => {
+  console.log(`[❌ 404] No route found for ${req.url}`);
+  res.status(404).json({ error: 'Route not found', path: req.url });
 });
 
-app.listen(PORT, () => {
-    console.log(`[V] Server running on http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Backend running on port ${PORT}`);
 });

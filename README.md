@@ -1,6 +1,7 @@
 # Creditcard-Transaction
 
-- [Test Website](https://dbdev.mintice.blog/)
+- [Deepwiki](https://deepwiki.com/SoWiEee/Creditcard-Transaction/tree/main)
+- [Test Website](https://dbdev.mintice.blog/) (not working)
 
 > 信用卡交易與點數系統開發規格書
 
@@ -19,9 +20,9 @@ cd Creditcard-Transaction
 docker compose up --build
 ```
 
-- Frontend：http://localhost
-- Backend health check：http://localhost/api/health
-- PostgreSQL：localhost:5432
+- Frontend：http://localhost:5173
+- Backend：http://localhost:3000
+- PostgreSQL：http://localhost:5432
 
 # Database Schema
 
@@ -50,12 +51,13 @@ docker compose up --build
 | source_transaction_id   | INT   | NULLABLE  | 僅用於 Refund，記錄原始交易 ID   |
 
 # API Specification
-- 所有 API 回應皆為 JSON 格式。 Base URL: /api
+
+- 所有 API 回應皆為 JSON 格式
 
 ## 取得使用者資訊
 
 - 用於前端初始化 Dashboard，顯示餘額與點數
-- GET /users/:id
+- GET /api/users/:id
 - Request Parameters: id: 使用者 ID (Int)
 
 Response (200 OK)
@@ -72,7 +74,7 @@ Response (200 OK)
 ## 取得交易列表
 
 - 用於顯示交易歷史紀錄表格。
-- GET /transactions/:user_id
+- GET /api/transactions/:user_id
 
 Response (200 OK)
 ```json
@@ -99,7 +101,7 @@ Response (200 OK)
 ## 新增交易
 
 - 一般消費功能，需檢查信用額度並計算回饋點數。
-- POST /transactions/pay
+- POST /api/transactions/pay
 - Request Body:
 
 ```json
@@ -128,7 +130,7 @@ Error Response (400 Bad Request)
 ## 取消交易
 
 - 針對尚未請款 (Pending) 的交易進行作廢。
-- POST /transactions/void
+- POST /api/transactions/void
 - Request Body:
 
 ```json
@@ -149,7 +151,7 @@ Response (200 OK)
 ## 退款交易
 
 - 針對已請款 (Paid) 的交易進行退貨，需執行「補償交易」(Compensating Transaction) 並扣回點數。
-- POST /transactions/refund
+- POST /api/transactions/refund
 - Request Body:
 
 ```json

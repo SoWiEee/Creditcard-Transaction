@@ -10,7 +10,7 @@ export default defineConfig({
     strictPort: true,
     hmr: {
       protocol: "wss",
-      host: "dbdev.mintice.blog",
+      host: "dbprod.mintice.blog",
     }
   }
 })

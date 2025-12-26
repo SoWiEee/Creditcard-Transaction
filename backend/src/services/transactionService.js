@@ -1,6 +1,7 @@
 import pool from '../config/db.js';
 import * as UserModel from '../models/userModel.js';
 import * as TxModel from '../models/transactionModel.js';
+import * as RiskEngine from './riskEngine.js';
 
 const MERCHANT_RATES = {
     '7-11': 1,         // x1
@@ -70,7 +71,11 @@ export const processPayment = async (userId, amount, merchant, usePoints) => {
     return withTransaction(async (client, logger) => {
         logger.raw(`\n> Processing: PAY at ${merchant}, User: ${userId}, Total: $${amount}\n`);
 
+        // 將 client 和 logger 傳進去，這樣 RiskEngine 可以查資料庫並寫入 System Log
+        await RiskEngine.evaluatePaymentRisk(client, userId, amount, merchant, logger);
+
         // 1. 取得使用者資料
+        logger.info(`[PAY] Starting transaction logic for User ${userId}.`);
         logger.sql(`SELECT * FROM Users WHERE user_id = ${userId} FOR UPDATE;`); 
 
         const res = await client.query('SELECT * FROM Users WHERE user_id = $1 FOR UPDATE', [userId]);

@@ -20,81 +20,79 @@ const RULES = {
  * @param {Object} logger - 用來寫入 Log 的物件
  */
 export const evaluatePaymentRisk = async (client, userId, amount, merchant, logger) => {
-  logger.info(`[RISK] Starting Risk Evaluation for User ${userId}...`);
+	logger.info(`[RISK] Starting Risk Evaluation for User ${userId}...`);
 
-  // ---------------------------------------------------------
-  // 規則 1 & 2: 金額限制 (基礎檢查)
-  // ---------------------------------------------------------
-  if (amount > RULES.MAX_AMOUNT) {
-    logger.info(`[RISK] FAIL: Amount $${amount} exceeds limit $${RULES.MAX_AMOUNT}.`);
-    throw new Error(`Risk Control: Transaction amount exceeds maximum limit ($${RULES.MAX_AMOUNT}).`);
-  }
+	// 規則 1 & 2: 金額限制
+	if (amount > RULES.MAX_AMOUNT) {
+		logger.info(`[RISK] FAIL: Amount $${amount} exceeds limit $${RULES.MAX_AMOUNT}.`);
+		throw new Error(`Risk Control: Transaction amount exceeds maximum limit ($${RULES.MAX_AMOUNT}).`);
+	}
 
-  if (amount < RULES.MIN_AMOUNT) {
-    logger.info(`[RISK] FAIL: Amount $${amount} is below minimum $${RULES.MIN_AMOUNT}.`);
-    throw new Error(`Risk Control: Transaction amount is too low (Min: $${RULES.MIN_AMOUNT}).`);
-  }
+	if (amount < RULES.MIN_AMOUNT) {
+		logger.info(`[RISK] FAIL: Amount $${amount} is below minimum $${RULES.MIN_AMOUNT}.`);
+		throw new Error(`Risk Control: Transaction amount is too low (Min: $${RULES.MIN_AMOUNT}).`);
+	}
 
-  logger.info('[RISK] PASS: Amount limits check.');
+	logger.info('[RISK] PASS: Amount limits check.');
 
-  // ---------------------------------------------------------
-  // 規則 5: 退款濫用偵測 (Refund Abuse) -> 凍結帳戶
-  // 檢查該使用者在過去 24 小時內的退款次數
-  // ---------------------------------------------------------
-  const refundRes = await client.query(
-    `SELECT COUNT(*) as count FROM Transactions 
-      WHERE user_id = $1 AND status = 'Refunded' 
-      AND created_at > NOW() - INTERVAL '${RULES.REFUND_WINDOW}'`,
-    [userId]
-  );
-  const refundCount = parseInt(refundRes.rows[0].count);
+	// ---------------------------------------------------------
+	// 規則 5: 退款濫用偵測 (Refund Abuse) -> 凍結帳戶
+	// 檢查該使用者在過去 24 小時內的退款次數
+	// ---------------------------------------------------------
+	const refundRes = await client.query(
+	`EXPLAIN (ANALYZE, BUFFERS)
+		SELECT COUNT(*) as count FROM Transactions 
+		WHERE user_id = $1 AND status = 'Refunded' 
+		AND created_at > NOW() - INTERVAL '${RULES.REFUND_WINDOW}'`,
+	[userId]
+	);
+	const refundCount = parseInt(refundRes.rows[0].count);
 
-  if (refundCount >= RULES.REFUND_LIMIT) {
-    logger.info(`[RISK] FAIL: User has ${refundCount} refunds in 24h. Account temporarily frozen.`);
-    // 這裡我們直接拋出錯誤來模擬「凍結」效果，不允許進行新交易
-    throw new Error(`Security Alert: Account temporarily frozen due to excessive refunds (${refundCount}/${RULES.REFUND_LIMIT} in 24h).`);
-  }
-  logger.info(`[RISK] PASS: Refund history check (${refundCount} refunds in 24h).`);
+	if (refundCount >= RULES.REFUND_LIMIT) {
+		logger.info(`[RISK] FAIL: User has ${refundCount} refunds in 24h. Account temporarily frozen.`);
+	// 這裡我們直接拋出錯誤來模擬「凍結」效果，不允許進行新交易
+	throw new Error(`Security Alert: Account temporarily frozen due to excessive refunds (${refundCount}/${RULES.REFUND_LIMIT} in 24h).`);
+	}
+	logger.info(`[RISK] PASS: Refund history check (${refundCount} refunds in 24h).`);
 
-  // ---------------------------------------------------------
-  // 規則 3: 頻率控制 (Velocity Check)
-  // 同一 User ID 在 1 分鐘內 不得超過 3 筆 交易
-  // ---------------------------------------------------------
-  const velocityRes = await client.query(
-    `SELECT COUNT(*) as count FROM Transactions 
-      WHERE user_id = $1 
-      AND created_at > NOW() - INTERVAL '${RULES.VELOCITY_WINDOW}'`,
-    [userId]
-  );
-  const velocityCount = parseInt(velocityRes.rows[0].count);
+	// ---------------------------------------------------------
+	// 規則 3: 同一 User ID 在 1 分鐘內 不得超過 3 筆 交易
+	// ---------------------------------------------------------
+	const velocityRes = await client.query(
+	`EXPLAIN (ANALYZE, BUFFERS)
+		SELECT COUNT(*) as count FROM Transactions 
+		WHERE user_id = $1 
+		AND created_at > NOW() - INTERVAL '${RULES.VELOCITY_WINDOW}'`,
+	[userId]
+	);
+	const velocityCount = parseInt(velocityRes.rows[0].count);
 
-  // 注意：這裡是用 >=，因為這筆交易還沒寫入，如果已經有 3 筆，這筆就是第 4 筆，要擋掉
-  if (velocityCount >= RULES.VELOCITY_LIMIT) {
-    logger.info(`[RISK] FAIL: Velocity limit reached (${velocityCount} tx in 1 min).`);
-    throw new Error(`Risk Control: Too many transactions in short period. Please try again later.`);
-  }
-  logger.info(`[RISK] PASS: Velocity check (${velocityCount}/${RULES.VELOCITY_LIMIT} tx in 1 min).`);
+	if (velocityCount >= RULES.VELOCITY_LIMIT) {
+		logger.info(`[RISK] FAIL: Velocity limit reached (${velocityCount} tx in 1 min).`);
+		throw new Error(`Risk Control: Too many transactions in short period. Please try again later.`);
+	}
+	logger.info(`[RISK] PASS: Velocity check (${velocityCount}/${RULES.VELOCITY_LIMIT} tx in 1 min).`);
 
-  // ---------------------------------------------------------
-  // 規則 4: 重複交易偵測 (Duplicate Transaction)
-  // 同一 User, 同一 Merchant, 5 分鐘內, 相同金額
-  // ---------------------------------------------------------
-  const duplicateRes = await client.query(
-    `SELECT COUNT(*) as count FROM Transactions 
-      WHERE user_id = $1 
-      AND merchant = $2 
-      AND amount = $3 
-      AND created_at > NOW() - INTERVAL '${RULES.DUPLICATE_WINDOW}'`,
-    [userId, merchant, amount]
-  );
-  const duplicateCount = parseInt(duplicateRes.rows[0].count);
+	// ---------------------------------------------------------
+	// 規則 4: 重複交易偵測 (Duplicate Transaction)
+	// 同一 User, 同一 Merchant, 5 分鐘內, 相同金額
+	// ---------------------------------------------------------
+	const duplicateRes = await client.query(
+	`SELECT COUNT(*) as count FROM Transactions 
+		WHERE user_id = $1 
+		AND merchant = $2 
+		AND amount = $3 
+		AND created_at > NOW() - INTERVAL '${RULES.DUPLICATE_WINDOW}'`,
+	[userId, merchant, amount]
+	);
+	const duplicateCount = parseInt(duplicateRes.rows[0].count);
 
-  if (duplicateCount > 0) {
-    logger.info(`[RISK] FAIL: Duplicate transaction detected (Same amount to ${merchant} in 5 min).`);
-    throw new Error(`Risk Control: Potential duplicate transaction detected.`);
-  }
-  logger.info('[RISK] PASS: Duplicate transaction check.');
+	if (duplicateCount > 0) {
+		logger.info(`[RISK] FAIL: Duplicate transaction detected (Same amount to ${merchant} in 5 min).`);
+		throw new Error(`Risk Control: Potential duplicate transaction detected.`);
+	}
+	logger.info('[RISK] PASS: Duplicate transaction check.');
 
-  logger.info('[RISK] ✅ All Risk Checks Passed.');
-  return true;
+	logger.info('[RISK] [V] All Risk Checks Passed.');
+	return true;
 };

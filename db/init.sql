@@ -29,3 +29,9 @@ CREATE TABLE IF NOT EXISTS Points (
     FOREIGN KEY (user_id) REFERENCES Users(user_id),
     FOREIGN KEY (transaction_id) REFERENCES Transactions(transaction_id)
 );
+
+CREATE INDEX idx_transactions_risk_control 
+ON Transactions (user_id, created_at);
+
+CREATE INDEX idx_transactions_duplicate_check 
+ON Transactions (user_id, merchant, created_at);

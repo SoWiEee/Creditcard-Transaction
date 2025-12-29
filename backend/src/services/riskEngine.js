@@ -40,8 +40,7 @@ export const evaluatePaymentRisk = async (client, userId, amount, merchant, logg
 	// 檢查該使用者在過去 24 小時內的退款次數
 	// ---------------------------------------------------------
 	const refundRes = await client.query(
-	`EXPLAIN (ANALYZE, BUFFERS)
-		SELECT COUNT(*) as count FROM Transactions 
+	`SELECT COUNT(*) as count FROM Transactions 
 		WHERE user_id = $1 AND status = 'Refunded' 
 		AND created_at > NOW() - INTERVAL '${RULES.REFUND_WINDOW}'`,
 	[userId]
@@ -59,8 +58,7 @@ export const evaluatePaymentRisk = async (client, userId, amount, merchant, logg
 	// 規則 3: 同一 User ID 在 1 分鐘內 不得超過 3 筆 交易
 	// ---------------------------------------------------------
 	const velocityRes = await client.query(
-	`EXPLAIN (ANALYZE, BUFFERS)
-		SELECT COUNT(*) as count FROM Transactions 
+	`SELECT COUNT(*) as count FROM Transactions 
 		WHERE user_id = $1 
 		AND created_at > NOW() - INTERVAL '${RULES.VELOCITY_WINDOW}'`,
 	[userId]

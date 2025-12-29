@@ -16,14 +16,19 @@ services:
     restart: unless-stopped
 
   backend:
-    build: ./backend
+    build: ./backend_go
     depends_on:
       - db
       - redis
     environment:
-      DATABASE_URL: postgres://cct_user:cct_pass@db:5432/creditcard
+      DATABASE_URL: postgres://cct_user:cct_pass@db:5432/creditcard?sslmode=disable
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      RUN_SEED: "1"
+      SEED_DIR: "/seeddata"
+      WAIT_FOR_DEPS: "1"
+    volumes:
+      - ./backend_go/db/seed:/seeddata:ro
     ports:
       - "3000:3000"
 

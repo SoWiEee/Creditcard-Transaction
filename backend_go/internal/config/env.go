@@ -27,7 +27,6 @@ type Env struct {
 func LoadEnv() Env {
 	port := getenv("PORT", "3000")
 
-	// Prefer DATABASE_URL if set
 	databaseURL := os.Getenv("DATABASE_URL")
 
 	dbHost := getenv("DB_HOST", "db")
@@ -36,20 +35,20 @@ func LoadEnv() Env {
 	dbPass := getenv("DB_PASSWORD", "cct_pass")
 	dbName := getenv("DB_NAME", "creditcard")
 
-	redisAddr := getenv("REDIS_ADDR", "redis:6379")
+	redisAddr := fmt.Sprintf("%s:%s", os.Getenv("REDIS_HOST"), os.Getenv("REDIS_PORT"))
 	redisPass := os.Getenv("REDIS_PASSWORD")
 	redisDB := getenvInt("REDIS_DB", 0)
 
 	loadTest := getenvBool("LOADTEST", false)
 
 	return Env{
-		Port:        port,
-		DatabaseURL: databaseURL,
-		DBHost:      dbHost,
-		DBPort:      dbPort,
-		DBUser:      dbUser,
-		DBPassword:  dbPass,
-		DBName:      dbName,
+		Port:          port,
+		DatabaseURL:   databaseURL,
+		DBHost:        dbHost,
+		DBPort:        dbPort,
+		DBUser:        dbUser,
+		DBPassword:    dbPass,
+		DBName:        dbName,
 		RedisAddr:     redisAddr,
 		RedisPassword: redisPass,
 		RedisDB:       redisDB,

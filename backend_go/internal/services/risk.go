@@ -56,11 +56,11 @@ func (r *RiskEngine) EvaluatePaymentRisk(ctx context.Context, q models.Querier, 
 	// Amount bounds
 	if amount > r.Rules.MaxAmount {
 		log.Info(fmt.Sprintf("[RISK] FAIL: Amount $%.2f exceeds limit $%.2f.", amount, r.Rules.MaxAmount))
-		return errors.New(fmt.Sprintf("Risk Control: Transaction amount exceeds maximum limit ($%.0f).", r.Rules.MaxAmount))
+		return fmt.Errorf("Risk Control: Transaction amount exceeds maximum limit ($%.0f).", r.Rules.MaxAmount)
 	}
 	if amount < r.Rules.MinAmount {
 		log.Info(fmt.Sprintf("[RISK] FAIL: Amount $%.2f is below minimum $%.2f.", amount, r.Rules.MinAmount))
-		return errors.New(fmt.Sprintf("Risk Control: Transaction amount is too low (Min: $%.0f).", r.Rules.MinAmount))
+		return fmt.Errorf("Risk Control: Transaction amount is too low (Min: $%.0f).", r.Rules.MinAmount)
 	}
 	log.Info("[RISK] PASS: Amount limits check.")
 
@@ -90,7 +90,7 @@ func (r *RiskEngine) EvaluatePaymentRisk(ctx context.Context, q models.Querier, 
 	}
 	if refundCount >= r.Rules.RefundLimit {
 		log.Info(fmt.Sprintf("[RISK] FAIL: User has %d refunds in 24h. Account temporarily frozen.", refundCount))
-		return errors.New(fmt.Sprintf("Security Alert: Account temporarily frozen due to excessive refunds (%d/%d in 24h).", refundCount, r.Rules.RefundLimit))
+		return fmt.Errorf("Security Alert: Account temporarily frozen due to excessive refunds (%d/%d in 24h).", refundCount, r.Rules.RefundLimit)
 	}
 	log.Info(fmt.Sprintf("[RISK] PASS: Refund history check (%d refunds in 24h).", refundCount))
 
@@ -105,7 +105,7 @@ func (r *RiskEngine) EvaluatePaymentRisk(ctx context.Context, q models.Querier, 
 	}
 	if dupCount > 0 {
 		log.Info("[RISK] FAIL: Duplicate transaction detected.")
-		return errors.New("Risk Control: Potential duplicate transaction detected.")
+		return fmt.Errorf("Risk Control: Potential duplicate transaction detected.")
 	}
 	log.Info("[RISK] PASS: Duplicate transaction check.")
 	log.Info("[RISK] [V] All Risk Checks Passed.")

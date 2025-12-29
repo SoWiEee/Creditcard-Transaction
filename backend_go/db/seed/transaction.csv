@@ -1,0 +1,5 @@
+transaction_id,user_id,amount,status,point_change,source_transaction_id,created_at
+101,1,1000,Paid,10,NULL,2023-01-01 10:00:00
+102,3,5000,Paid,50,NULL,2023-01-02 14:30:00
+103,2,200,Pending,2,NULL,2023-01-03 9:15:00
+104,1,500,Paid,-5,NULL,2023-01-03 10:00:00

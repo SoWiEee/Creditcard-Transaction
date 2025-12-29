@@ -1,33 +1,34 @@
-import express from 'express';
-import cors from 'cors';
+import Fastify from 'fastify';
+import cors from '@fastify/cors';
 import transactionRoutes from './routes/transactionRoutes.js';
 
-const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT || 3000);
 
-// Middleware
-app.use((req, res, next) => {
-  console.log(`[Incoming] ${req.method} ${req.url}`);
-  next();
+const fastify = Fastify({
+  logger: false,
 });
 
-app.use(cors({
-  origin: true,
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
-app.use(express.json());
-
-// Routes
-app.use('/api', transactionRoutes);
-
-// 404 Handler
-app.use((req, res) => {
-  console.log(`[❌ 404] No route found for ${req.url}`);
-  res.status(404).json({ error: 'Route not found', path: req.url });
+// CORS
+await fastify.register(cors, {
+	origin: true,
+	credentials: true,
+	methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+	allowedHeaders: ['Content-Type', 'Authorization'],
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Backend running on port ${PORT}`);
+// routes
+await fastify.register(transactionRoutes, { prefix: '/api' });
+
+// 404 handler
+fastify.setNotFoundHandler(async (request, reply) => {
+	console.log(`[X] No route found for ${request.url}`);
+	return reply.code(404).send({ error: 'Route not found', path: request.url });
 });
+
+try {
+	await fastify.listen({ port: PORT, host: '0.0.0.0' });
+	console.log(`🚀 Backend running on port ${PORT}`);
+} catch (err) {
+	console.error(err);
+	process.exit(1);
+}

@@ -1,14 +1,28 @@
-import express from 'express';
 import * as txController from '../controllers/transactionController.js';
 import { validate } from '../middleware/validate.js';
 import { paySchema, transactionActionSchema } from '../utils/schemas.js';
 
-const router = express.Router();
+export default async function transactionRoutes(fastify) {
+    fastify.get('/health', async () => ({ status: 'ok' }));
 
-router.get('/users/:id', txController.getUserInfo); 
-router.get('/transactions/:user_id', txController.getUserTransactions);
-router.post('/transactions/pay', validate(paySchema), txController.pay);
-router.post('/transactions/void', validate(transactionActionSchema), txController.voidTx);
-router.post('/transactions/refund', validate(transactionActionSchema), txController.refundTx);
+    fastify.get('/users/:id', txController.getUserInfo);
+    fastify.get('/transactions/:user_id', txController.getUserTransactions);
 
-export default router;
+    fastify.post(
+        '/transactions/pay',
+        { preHandler: validate(paySchema) },
+        txController.pay,
+    );
+
+    fastify.post(
+        '/transactions/void',
+        { preHandler: validate(transactionActionSchema) },
+        txController.voidTx,
+    );
+
+    fastify.post(
+        '/transactions/refund',
+        { preHandler: validate(transactionActionSchema) },
+        txController.refundTx,
+    );
+}

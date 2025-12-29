@@ -1,76 +1,75 @@
 import * as TransactionService from '../services/transactionService.js';
 
-export const getUserInfo = async (req, res) => {
+export const getUserInfo = async (request, reply) => {
 	try {
-		const userId = req.params.id;
+		const userId = request.params.id;
 
 		if (isNaN(userId)) {
-			return res.status(400).json({ error: 'Invalid user ID format' });
+			return reply.code(400).send({ error: 'Invalid user ID format' });
 		}
 
 		const user = await TransactionService.getUserDetails(userId);
-		res.json(user);
+		return user;
 
 	} catch (error) {
 		if (error.message === 'User not found') {
-			res.status(404).json({ error: 'User not found' });
-		} else {
-			console.error(error);
-			res.status(500).json({ error: 'Internal Server Error' });
+			return reply.code(404).send({ error: 'User not found' });
 		}
+
+		console.error(error);
+		return reply.code(500).send({ error: 'Internal Server Error' });
 	}
 };
 
-export const getUserTransactions = async (req, res) => {
+export const getUserTransactions = async (request, reply) => {
 	try {
-		const userId = req.params.user_id; 
+		const userId = request.params.user_id;
 
 		if (isNaN(userId)) {
-			return res.status(400).json({ error: 'Invalid user ID format' });
+			return reply.code(400).send({ error: 'Invalid user ID format' });
 		}
 
 		const transactions = await TransactionService.getTransactionHistory(userId);
-		res.json(transactions);
+		return transactions;
 
 	} catch (error) {
 		console.error(error);
-		res.status(500).json({ error: 'Internal Server Error' });
+		return reply.code(500).send({ error: 'Internal Server Error' });
 	}
 };
 
-export const pay = async (req, res) => {
+export const pay = async (request, reply) => {
 	try {
-		const { user_id, amount, merchant, use_points } = req.body;
+		const { user_id, amount, merchant, use_points } = request.body;
 
 		const result = await TransactionService.processPayment(
-			user_id, 
-			amount, 
+			user_id,
+			amount,
 			merchant || 'Unknown',
-			use_points || false
+			use_points || false,
 		);
-
-		res.status(201).json(result);
+		return reply.code(201).send(result);
 	} catch (error) {
-		res.status(400).json({ error: error.message, logs: error.logs || [] });
+		return reply.code(400).send({ error: error.message, logs: error.logs || [] });
 	}
 };
 
-export const voidTx = async (req, res) => {
+export const voidTx = async (request, reply) => {
 	try {
-		const { user_id, target_transaction_id } = req.body;
+		const { user_id, target_transaction_id } = request.body;
 		const result = await TransactionService.voidTransaction(user_id, target_transaction_id);
-		res.json(result);
+		return result;
 	} catch (error) {
-		res.status(400).json({ error: error.message });
+		return reply.code(400).send({ error: error.message });
 	}
 };
 
-export const refundTx = async (req, res) => {
+export const refundTx = async (request, reply) => {
 	try {
-		const { user_id, target_transaction_id } = req.body;
+		const { user_id, target_transaction_id } = request.body;
 		const result = await TransactionService.refundTransaction(user_id, target_transaction_id);
-		res.json(result);
+		return result;
 	} catch (error) {
-		res.status(400).json({ error: error.message, logs: error.logs || [] });
+		return reply.code(400).send({ error: error.message, logs: error.logs || [] });
 	}
 };

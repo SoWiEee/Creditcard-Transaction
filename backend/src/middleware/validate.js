@@ -1,16 +1,14 @@
 export const validate = (schema) => {
-    return (req, res, next) => {
-        const { error } = schema.validate(req.body, { abortEarly: false });
+    return async (request, reply) => {
+        const { error } = schema.validate(request.body, { abortEarly: false });
 
         if (error) {
-            const errors = error.details.map(detail => detail.message);
-            return res.status(400).json({ 
-            status: 'error', 
-            message: 'Invalid input data', 
-            errors 
+            const errors = error.details.map((detail) => detail.message);
+            return reply.code(400).send({
+                status: 'error',
+                message: 'Invalid input data',
+                errors,
             });
         }
-
-        next();
     };
 };

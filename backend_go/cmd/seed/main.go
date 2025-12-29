@@ -7,7 +7,9 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -204,9 +206,8 @@ func loadTransactions(path string) ([]Transaction, error) {
 			srcID = sql.NullInt64{Int64: int64(v), Valid: true}
 		}
 
-		createdAt, err := time.Parse(time.RFC3339, row[6])
+		createdAt, err := parseCreatedAt(row[6])
 		if err != nil {
-			// 你的 created_at 若不是 RFC3339，可在這裡再加其他格式
 			return nil, fmt.Errorf("bad created_at at row %d: %v (value=%q)", i+1, err, row[6])
 		}
 
@@ -229,4 +230,35 @@ func loadTransactions(path string) ([]Transaction, error) {
 	}
 
 	return txs, nil
+}
+
+var oneDigitHour = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2}) (\d):(\d{2}:\d{2})$`)
+
+func parseCreatedAt(s string) (time.Time, error) {
+	s = strings.TrimSpace(s)
+	if s == "" || s == "NULL" {
+		return time.Time{}, fmt.Errorf("empty created_at")
+	}
+
+	// 1) 先試 RFC3339（萬一未來你換格式）
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t, nil
+	}
+
+	// 2) 你目前 CSV 的主要格式：YYYY-MM-DD HH:MM:SS
+	//    但 Go 會要求 HH 必須是兩位數
+	if t, err := time.ParseInLocation("2006-01-02 15:04:05", s, time.UTC); err == nil {
+		return t, nil
+	}
+
+	// 3) 處理單位數小時：2023-01-03 9:15:00 -> 2023-01-03 09:15:00
+	if m := oneDigitHour.FindStringSubmatch(s); m != nil {
+		fixed := fmt.Sprintf("%s 0%s:%s", m[1], m[2], m[3])
+		if t, err := time.ParseInLocation("2006-01-02 15:04:05", fixed, time.UTC); err == nil {
+			return t, nil
+		}
+	}
+
+	// 4) 如果還是失敗，就回報原字串方便你抓錯
+	return time.Time{}, fmt.Errorf("unsupported created_at format: %q", s)
 }

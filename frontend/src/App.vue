@@ -1,4 +1,5 @@
 <template>
+	<TopToast />
 	<div class="app-container">
 		<header class="app-header">
 			<div class="header-left">

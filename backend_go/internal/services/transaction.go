@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/http"
 
 	"backend_go/internal/models"
 	"backend_go/internal/utils"
@@ -26,7 +27,7 @@ var merchantRates = map[string]float64{
 }
 
 type TxResult struct {
-	TransactionID  int      `json:"transactionId"`
+	TransactionID  int64    `json:"transactionId"`
 	FinalAmount    float64  `json:"finalAmount"`
 	PointsEarned   int      `json:"pointsEarned"`
 	PointsRedeemed int      `json:"pointsRedeemed"`
@@ -41,10 +42,33 @@ type VoidResult struct {
 }
 
 type RefundResult struct {
-	RefundTransactionID int      `json:"refundTransactionId"`
+	RefundTransactionID int64    `json:"refundTransactionId"`
 	Logs                []string `json:"logs"`
 }
 
+// ---- New TxError with HTTP + Code ----
+type TxError struct {
+	HTTP int
+	Code string
+	Msg  string
+	Logs []string
+}
+
+func (e *TxError) Error() string { return e.Msg }
+
+func NewTxError(httpStatus int, code, msg string) *TxError {
+	return &TxError{HTTP: httpStatus, Code: code, Msg: msg}
+}
+
+func asTxError(err error) (*TxError, bool) {
+	var te *TxError
+	if errors.As(err, &te) {
+		return te, true
+	}
+	return nil, false
+}
+
+// ---- Transaction wrapper ----
 func (s *TransactionService) withTransaction(ctx context.Context, fn func(tx pgx.Tx, log *utils.TxLogger) (any, error)) (any, []string, error) {
 	conn, err := s.Pool.Acquire(ctx)
 	if err != nil {
@@ -73,10 +97,12 @@ func (s *TransactionService) withTransaction(ctx context.Context, fn func(tx pgx
 	return res, log.Logs, nil
 }
 
+// ---- Query APIs ----
 func (s *TransactionService) GetUserDetails(ctx context.Context, userID int) (*models.User, error) {
 	u, err := models.GetUserByID(ctx, s.Pool, userID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			// handlers.go 目前用字串比對 User not found 做 404，所以保留
 			return nil, errors.New("User not found")
 		}
 		return nil, err
@@ -88,10 +114,18 @@ func (s *TransactionService) GetTransactionHistory(ctx context.Context, userID i
 	return models.GetTransactionsByUserID(ctx, s.Pool, userID)
 }
 
+// ---- PAY ----
 func (s *TransactionService) ProcessPayment(ctx context.Context, userID int, amount float64, merchant string, usePoints bool) (*TxResult, error) {
 	anyRes, logs, err := s.withTransaction(ctx, func(tx pgx.Tx, log *utils.TxLogger) (any, error) {
 		log.Raw(fmt.Sprintf("\n> Processing: PAY at %s, User: %d, Total: $%.2f\n", merchant, userID, amount))
 
+		// Merchant whitelist
+		mult, ok := merchantRates[merchant]
+		if !ok {
+			return nil, NewTxError(http.StatusBadRequest, "INVALID_MERCHANT", "Invalid merchant")
+		}
+
+		// Risk
 		if err := s.Risk.EvaluatePaymentRisk(ctx, tx, userID, amount, merchant, log); err != nil {
 			return nil, err
 		}
@@ -104,7 +138,7 @@ func (s *TransactionService) ProcessPayment(ctx context.Context, userID int, amo
 		row := tx.QueryRow(ctx, `SELECT user_id, username, balance, current_points, credit_limit FROM Users WHERE user_id=$1 FOR UPDATE`, userID)
 		if err := row.Scan(&user.UserID, &user.Username, &user.Balance, &user.CurrentPoints, &user.CreditLimit); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				return nil, errors.New("User not found")
+				return nil, NewTxError(http.StatusNotFound, "USER_NOT_FOUND", "User not found")
 			}
 			return nil, err
 		}
@@ -133,25 +167,20 @@ func (s *TransactionService) ProcessPayment(ctx context.Context, userID int, amo
 
 		// Credit limit check
 		if (user.Balance + finalAmount) > user.CreditLimit {
-			return nil, errors.New(fmt.Sprintf("Insufficient credit. New Balance %.2f > Limit %.2f", user.Balance+finalAmount, user.CreditLimit))
+			return nil, NewTxError(http.StatusConflict, "INSUFFICIENT_CREDIT", "Insufficient credit")
 		}
 
-		mult := merchantRates[merchant]
-		if mult == 0 {
-			mult = 1
-		}
 		pointsEarned := int(math.Floor(finalAmount * mult))
 		log.Info(fmt.Sprintf("[Rewards] Merchant: %s (x%g). Points Earned: floor(%.2f)*%g = %d.", merchant, mult, finalAmount, mult, pointsEarned))
-
-		maxID, err := models.GetMaxTransactionID(ctx, tx)
-		if err != nil {
-			return nil, err
-		}
-		newTxID := maxID + 1
 		netPointChange := pointsEarned - pointsRedeemed
 
-		log.SQL(fmt.Sprintf("INSERT INTO Transactions (...) VALUES (%d, %d, %.2f, 'Paid', %d, '%s');", newTxID, userID, finalAmount, netPointChange, merchant))
-		if err := models.CreateTransaction(ctx, tx, newTxID, userID, finalAmount, "Paid", netPointChange, merchant, nil); err != nil {
+		log.SQL(fmt.Sprintf(
+			"INSERT INTO Transactions (user_id, amount, status, point_change, merchant, source_transaction_id) VALUES (%d, %.2f, 'Paid', %d, '%s', NULL) RETURNING transaction_id;",
+			userID, finalAmount, netPointChange, merchant,
+		))
+
+		newTxID, err := models.CreateTransactionReturningID(ctx, tx, userID, finalAmount, "Paid", netPointChange, merchant, nil)
+		if err != nil {
 			return nil, err
 		}
 
@@ -178,36 +207,41 @@ func (s *TransactionService) ProcessPayment(ctx context.Context, userID int, amo
 		log.Info(fmt.Sprintf("Transaction %d completed. Net Points: %d", newTxID, netPointChange))
 		return &TxResult{TransactionID: newTxID, FinalAmount: finalAmount, PointsEarned: pointsEarned, PointsRedeemed: pointsRedeemed}, nil
 	})
+
 	if err != nil {
-		return nil, &TxError{Msg: err.Error(), Logs: logs}
+		// preserve TxError (risk/business) with logs
+		if te, ok := asTxError(err); ok {
+			te.Logs = logs
+			return nil, te
+		}
+		// unknown/internal
+		ie := NewTxError(http.StatusInternalServerError, "INTERNAL_ERROR", "Internal Server Error")
+		ie.Logs = logs
+		return nil, ie
 	}
+
 	res := anyRes.(*TxResult)
 	res.Logs = logs
 	return res, nil
 }
 
-type TxError struct {
-	Msg  string
-	Logs []string
-}
-
-func (e *TxError) Error() string { return e.Msg }
-
+// ---- VOID ----
 func (s *TransactionService) VoidTransaction(ctx context.Context, userID int, targetTxID int) (*VoidResult, error) {
 	anyRes, logs, err := s.withTransaction(ctx, func(tx pgx.Tx, log *utils.TxLogger) (any, error) {
 		log.Raw(fmt.Sprintf("\n> Processing: VOID, Target Transaction: %d\n", targetTxID))
+
 		t, err := models.GetTransactionByIDForUpdate(ctx, tx, targetTxID)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				return nil, errors.New("Transaction not found")
+				return nil, NewTxError(http.StatusNotFound, "TX_NOT_FOUND", "Transaction not found")
 			}
 			return nil, err
 		}
 		if t.UserID != userID {
-			return nil, errors.New("Security Alert: Unauthorized access. You do not own this transaction.")
+			return nil, NewTxError(http.StatusForbidden, "TX_FORBIDDEN", "Unauthorized access")
 		}
 		if t.Status == "Voided" || t.Status == "Refunded" {
-			return nil, errors.New(fmt.Sprintf("Cannot void transaction with status: %s", t.Status))
+			return nil, NewTxError(http.StatusConflict, "TX_INVALID_STATUS", fmt.Sprintf("Cannot void transaction with status: %s", t.Status))
 		}
 
 		log.SQL(fmt.Sprintf("UPDATE Transactions SET status='Voided' WHERE transaction_id=%d;", targetTxID))
@@ -233,69 +267,94 @@ func (s *TransactionService) VoidTransaction(ctx context.Context, userID int, ta
 
 		return &VoidResult{Success: true, VoidedAmount: t.Amount, RestoredPoints: reversePointChange}, nil
 	})
+
 	if err != nil {
-		return nil, &TxError{Msg: err.Error(), Logs: logs}
+		if te, ok := asTxError(err); ok {
+			te.Logs = logs
+			return nil, te
+		}
+		ie := NewTxError(http.StatusInternalServerError, "INTERNAL_ERROR", "Internal Server Error")
+		ie.Logs = logs
+		return nil, ie
 	}
+
 	res := anyRes.(*VoidResult)
 	res.Logs = logs
 	return res, nil
 }
 
+// ---- REFUND ----
 func (s *TransactionService) RefundTransaction(ctx context.Context, userID int, targetTxID int) (*RefundResult, error) {
 	anyRes, logs, err := s.withTransaction(ctx, func(tx pgx.Tx, log *utils.TxLogger) (any, error) {
 		log.Raw(fmt.Sprintf("\n> Processing: REFUND, Target Transaction: %d\n", targetTxID))
+
 		t, err := models.GetTransactionByIDForUpdate(ctx, tx, targetTxID)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				return nil, errors.New("Transaction not found")
+				return nil, NewTxError(http.StatusNotFound, "TX_NOT_FOUND", "Transaction not found")
 			}
 			return nil, err
 		}
 		if t.UserID != userID {
-			return nil, errors.New("Security Alert: Unauthorized access.")
+			return nil, NewTxError(http.StatusForbidden, "TX_FORBIDDEN", "Unauthorized access")
 		}
 		if t.Status != "Paid" {
-			return nil, errors.New(fmt.Sprintf("Cannot refund transaction with status: %s", t.Status))
+			return nil, NewTxError(http.StatusConflict, "TX_INVALID_STATUS", fmt.Sprintf("Cannot refund transaction with status: %s", t.Status))
 		}
 
-		// check user points
 		u, err := models.GetUserByID(ctx, tx, userID)
 		if err != nil {
 			return nil, err
 		}
 		if u.CurrentPoints < t.PointChange {
-			return nil, errors.New("Insufficient points to rollback transaction")
+			return nil, NewTxError(http.StatusConflict, "INSUFFICIENT_POINTS", "Insufficient points to rollback transaction")
 		}
 
 		if err := models.UpdateTransactionStatus(ctx, tx, targetTxID, "Refunded"); err != nil {
 			return nil, err
 		}
-		maxID, err := models.GetMaxTransactionID(ctx, tx)
+
+		refundAmount := -t.Amount
+		refundPoints := -t.PointChange
+		src := int64(targetTxID)
+
+		log.SQL(fmt.Sprintf(
+			"INSERT INTO Transactions (user_id, amount, status, point_change, merchant, source_transaction_id) VALUES (%d, %.2f, 'Refunded', %d, '%s', %d) RETURNING transaction_id;",
+			userID, refundAmount, refundPoints, t.Merchant, targetTxID,
+		))
+
+		refundTxID, err := models.CreateTransactionReturningID(ctx, tx, userID, refundAmount, "Refunded", refundPoints, t.Merchant, &src)
 		if err != nil {
 			return nil, err
 		}
-		refundTxID := maxID + 1
-		refundAmount := -t.Amount
-		refundPoints := -t.PointChange
 
-		sourceID := targetTxID
-		if err := models.CreateTransaction(ctx, tx, refundTxID, userID, refundAmount, "Refunded", refundPoints, t.Merchant, &sourceID); err != nil {
+		if _, err := tx.Exec(ctx,
+			`UPDATE Users SET balance = balance + $1, current_points = current_points + $2 WHERE user_id=$3`,
+			refundAmount, refundPoints, userID,
+		); err != nil {
 			return nil, err
 		}
 
-		if _, err := tx.Exec(ctx, `UPDATE Users SET balance = balance + $1, current_points = current_points + $2 WHERE user_id=$3`, refundAmount, refundPoints, userID); err != nil {
-			return nil, err
-		}
-
-		if _, err := tx.Exec(ctx, `INSERT INTO Points (user_id, transaction_id, change_amount, reason) VALUES ($1,$2,$3,$4)`, userID, refundTxID, refundPoints, "Refund"); err != nil {
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO Points (user_id, transaction_id, change_amount, reason) VALUES ($1,$2,$3,$4)`,
+			userID, refundTxID, refundPoints, "Refund",
+		); err != nil {
 			return nil, err
 		}
 
 		return &RefundResult{RefundTransactionID: refundTxID}, nil
 	})
+
 	if err != nil {
-		return nil, &TxError{Msg: err.Error(), Logs: logs}
+		if te, ok := asTxError(err); ok {
+			te.Logs = logs
+			return nil, te
+		}
+		ie := NewTxError(http.StatusInternalServerError, "INTERNAL_ERROR", "Internal Server Error")
+		ie.Logs = logs
+		return nil, ie
 	}
+
 	res := anyRes.(*RefundResult)
 	res.Logs = logs
 	return res, nil

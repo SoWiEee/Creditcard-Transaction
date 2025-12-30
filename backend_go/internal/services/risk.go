@@ -2,8 +2,8 @@ package services
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"backend_go/internal/models"
@@ -17,9 +17,9 @@ type RiskRules struct {
 	MinAmount          float64
 	VelocityLimit      int64
 	VelocityWindow     time.Duration
-	DuplicateWindowSQL string // e.g. "5 minutes"
+	DuplicateWindowSQL string
 	RefundLimit        int64
-	RefundWindowSQL    string // e.g. "24 hours"
+	RefundWindowSQL    string
 }
 
 func DefaultRules(loadtest bool) RiskRules {
@@ -56,11 +56,11 @@ func (r *RiskEngine) EvaluatePaymentRisk(ctx context.Context, q models.Querier, 
 	// Amount bounds
 	if amount > r.Rules.MaxAmount {
 		log.Info(fmt.Sprintf("[RISK] FAIL: Amount $%.2f exceeds limit $%.2f.", amount, r.Rules.MaxAmount))
-		return fmt.Errorf("Risk Control: Transaction amount exceeds maximum limit ($%.0f).", r.Rules.MaxAmount)
+		return NewTxError(http.StatusBadRequest, "RISK_AMOUNT_TOO_HIGH", "Transaction amount exceeds maximum limit")
 	}
 	if amount < r.Rules.MinAmount {
 		log.Info(fmt.Sprintf("[RISK] FAIL: Amount $%.2f is below minimum $%.2f.", amount, r.Rules.MinAmount))
-		return fmt.Errorf("Risk Control: Transaction amount is too low (Min: $%.0f).", r.Rules.MinAmount)
+		return NewTxError(http.StatusBadRequest, "RISK_AMOUNT_TOO_LOW", "Transaction amount is too low")
 	}
 	log.Info("[RISK] PASS: Amount limits check.")
 
@@ -68,14 +68,17 @@ func (r *RiskEngine) EvaluatePaymentRisk(ctx context.Context, q models.Querier, 
 	velocityKey := fmt.Sprintf("risk:velocity:user:%d", userID)
 	count, err := r.Redis.Incr(ctx, velocityKey).Result()
 	if err != nil {
-		return fmt.Errorf("redis incr: %w", err)
+		log.Info(fmt.Sprintf("[RISK] ERROR: redis incr failed: %v", err))
+		return NewTxError(http.StatusServiceUnavailable, "REDIS_UNAVAILABLE", "Risk system temporarily unavailable")
 	}
 	if count == 1 {
-		_ = r.Redis.Expire(ctx, velocityKey, r.Rules.VelocityWindow).Err()
+		if err := r.Redis.Expire(ctx, velocityKey, r.Rules.VelocityWindow).Err(); err != nil {
+			log.Info(fmt.Sprintf("[RISK] WARN: redis expire failed: %v", err))
+		}
 	}
 	if count > r.Rules.VelocityLimit {
 		log.Info(fmt.Sprintf("[RISK] FAIL: Velocity limit reached (Redis: %d tx in window).", count))
-		return errors.New("Risk Control: Too many transactions in short period. Please try again later.")
+		return NewTxError(http.StatusTooManyRequests, "RISK_VELOCITY_LIMIT", "Too many transactions in short period")
 	}
 	log.Info(fmt.Sprintf("[RISK] PASS: Velocity check (Redis: %d/%d).", count, r.Rules.VelocityLimit))
 
@@ -86,11 +89,12 @@ func (r *RiskEngine) EvaluatePaymentRisk(ctx context.Context, q models.Querier, 
 		r.Rules.RefundWindowSQL,
 	)
 	if err := q.QueryRow(ctx, refundSQL, userID).Scan(&refundCount); err != nil {
-		return fmt.Errorf("refund count query: %w", err)
+		log.Info(fmt.Sprintf("[RISK] ERROR: refund count query failed: %v", err))
+		return NewTxError(http.StatusInternalServerError, "INTERNAL_ERROR", "Internal Server Error")
 	}
 	if refundCount >= r.Rules.RefundLimit {
 		log.Info(fmt.Sprintf("[RISK] FAIL: User has %d refunds in 24h. Account temporarily frozen.", refundCount))
-		return fmt.Errorf("Security Alert: Account temporarily frozen due to excessive refunds (%d/%d in 24h).", refundCount, r.Rules.RefundLimit)
+		return NewTxError(http.StatusForbidden, "RISK_REFUND_ABUSE", "Account temporarily frozen due to excessive refunds")
 	}
 	log.Info(fmt.Sprintf("[RISK] PASS: Refund history check (%d refunds in 24h).", refundCount))
 
@@ -101,12 +105,14 @@ func (r *RiskEngine) EvaluatePaymentRisk(ctx context.Context, q models.Querier, 
 		r.Rules.DuplicateWindowSQL,
 	)
 	if err := q.QueryRow(ctx, dupSQL, userID, merchant, amount).Scan(&dupCount); err != nil {
-		return fmt.Errorf("duplicate count query: %w", err)
+		log.Info(fmt.Sprintf("[RISK] ERROR: duplicate count query failed: %v", err))
+		return NewTxError(http.StatusInternalServerError, "INTERNAL_ERROR", "Internal Server Error")
 	}
 	if dupCount > 0 {
 		log.Info("[RISK] FAIL: Duplicate transaction detected.")
-		return fmt.Errorf("Risk Control: Potential duplicate transaction detected.")
+		return NewTxError(http.StatusConflict, "RISK_DUPLICATE", "Potential duplicate transaction detected")
 	}
+
 	log.Info("[RISK] PASS: Duplicate transaction check.")
 	log.Info("[RISK] [V] All Risk Checks Passed.")
 	return nil

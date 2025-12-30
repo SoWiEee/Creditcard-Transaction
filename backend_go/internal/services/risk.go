@@ -1,4 +1,4 @@
-package services
+package service
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"backend_go/internal/models"
+	"backend_go/internal/repo"
 	"backend_go/internal/utils"
 
 	"github.com/redis/go-redis/v9"
@@ -50,7 +50,7 @@ type RiskEngine struct {
 	Rules RiskRules
 }
 
-func (r *RiskEngine) EvaluatePaymentRisk(ctx context.Context, q models.Querier, userID int, amount float64, merchant string, log *utils.TxLogger) error {
+func (r *RiskEngine) EvaluatePaymentRisk(ctx context.Context, q repo.Querier, userID int, amount float64, merchant string, log *utils.TxLogger) error {
 	log.Info(fmt.Sprintf("[RISK] Starting Risk Evaluation for User %d...", userID))
 
 	// Amount bounds

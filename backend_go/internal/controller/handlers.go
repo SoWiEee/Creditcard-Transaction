@@ -1,4 +1,11 @@
-package httpapi
+package controller
+
+// Package controller contains HTTP handlers.
+//
+// Controller responsibilities:
+// - Parse/validate HTTP input (path params / JSON bodies)
+// - Call service layer to perform business logic
+// - Convert service results into HTTP responses
 
 import (
 	"context"
@@ -6,14 +13,14 @@ import (
 	"strconv"
 	"time"
 
-	"backend_go/internal/services"
+	service "backend_go/internal/services"
 	"backend_go/internal/utils"
 
 	"github.com/go-chi/chi/v5"
 )
 
 type API struct {
-	Svc *services.TransactionService
+	Svc *service.TransactionService
 }
 
 type healthResp struct {
@@ -72,7 +79,7 @@ type actionReq struct {
 	TargetTransactionID int `json:"target_transaction_id"`
 }
 
-func writeTxError(w http.ResponseWriter, te *services.TxError) {
+func writeTxError(w http.ResponseWriter, te *service.TxError) {
 	status := te.HTTP
 	if status == 0 {
 		status = 400
@@ -103,7 +110,7 @@ func (a *API) Pay(w http.ResponseWriter, r *http.Request) {
 
 	res, err := a.Svc.ProcessPayment(ctx, req.UserID, req.Amount, req.Merchant, req.UsePoints)
 	if err != nil {
-		if te, ok := err.(*services.TxError); ok {
+		if te, ok := err.(*service.TxError); ok {
 			writeTxError(w, te)
 			return
 		}
@@ -125,7 +132,7 @@ func (a *API) VoidTx(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := a.Svc.VoidTransaction(r.Context(), req.UserID, req.TargetTransactionID)
 	if err != nil {
-		if te, ok := err.(*services.TxError); ok {
+		if te, ok := err.(*service.TxError); ok {
 			writeTxError(w, te)
 			return
 		}
@@ -147,7 +154,7 @@ func (a *API) RefundTx(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := a.Svc.RefundTransaction(r.Context(), req.UserID, req.TargetTransactionID)
 	if err != nil {
-		if te, ok := err.(*services.TxError); ok {
+		if te, ok := err.(*service.TxError); ok {
 			writeTxError(w, te)
 			return
 		}

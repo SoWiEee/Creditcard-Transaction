@@ -1,8 +1,10 @@
-package models
+package repo
 
 import (
 	"context"
 	"database/sql"
+
+	"backend_go/internal/models"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -14,7 +16,6 @@ type Querier interface {
 	Exec(ctx context.Context, query string, args ...any) (pgconn.CommandTag, error)
 }
 
-// insert 由 DB identity 產生 transaction_id，並用 RETURNING 拿回來
 func CreateTransactionReturningID(
 	ctx context.Context,
 	q Querier,
@@ -39,9 +40,9 @@ func CreateTransaction(ctx context.Context, q Querier, txID, userID int, amount 
 	return err
 }
 
-func GetTransactionByIDForUpdate(ctx context.Context, q Querier, txID int) (*Transaction, error) {
+func GetTransactionByIDForUpdate(ctx context.Context, q Querier, txID int) (*models.Transaction, error) {
 	row := q.QueryRow(ctx, `SELECT transaction_id, user_id, amount, status, point_change, merchant, source_transaction_id, created_at FROM Transactions WHERE transaction_id=$1 FOR UPDATE`, txID)
-	var t Transaction
+	var t models.Transaction
 	var source sql.NullInt64
 	if err := row.Scan(&t.TransactionID, &t.UserID, &t.Amount, &t.Status, &t.PointChange, &t.Merchant, &source, &t.CreatedAt); err != nil {
 		return nil, err
@@ -53,15 +54,15 @@ func GetTransactionByIDForUpdate(ctx context.Context, q Querier, txID int) (*Tra
 	return &t, nil
 }
 
-func GetTransactionsByUserID(ctx context.Context, q Querier, userID int) ([]Transaction, error) {
+func GetTransactionsByUserID(ctx context.Context, q Querier, userID int) ([]models.Transaction, error) {
 	rows, err := q.Query(ctx, `SELECT transaction_id, user_id, amount, status, point_change, merchant, source_transaction_id, created_at FROM Transactions WHERE user_id=$1 ORDER BY created_at DESC`, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := make([]Transaction, 0)
+	out := make([]models.Transaction, 0)
 	for rows.Next() {
-		var t Transaction
+		var t models.Transaction
 		var source sql.NullInt64
 		if err := rows.Scan(&t.TransactionID, &t.UserID, &t.Amount, &t.Status, &t.PointChange, &t.Merchant, &source, &t.CreatedAt); err != nil {
 			return nil, err

@@ -1,4 +1,4 @@
-package services
+package service
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"backend_go/internal/models"
+	"backend_go/internal/repo"
 	"backend_go/internal/utils"
 
 	"github.com/jackc/pgx/v5"
@@ -99,7 +100,7 @@ func (s *TransactionService) withTransaction(ctx context.Context, fn func(tx pgx
 
 // ---- Query APIs ----
 func (s *TransactionService) GetUserDetails(ctx context.Context, userID int) (*models.User, error) {
-	u, err := models.GetUserByID(ctx, s.Pool, userID)
+	u, err := repo.GetUserByID(ctx, s.Pool, userID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// handlers.go 目前用字串比對 User not found 做 404，所以保留
@@ -111,7 +112,7 @@ func (s *TransactionService) GetUserDetails(ctx context.Context, userID int) (*m
 }
 
 func (s *TransactionService) GetTransactionHistory(ctx context.Context, userID int) ([]models.Transaction, error) {
-	return models.GetTransactionsByUserID(ctx, s.Pool, userID)
+	return repo.GetTransactionsByUserID(ctx, s.Pool, userID)
 }
 
 // ---- PAY ----
@@ -179,7 +180,7 @@ func (s *TransactionService) ProcessPayment(ctx context.Context, userID int, amo
 			userID, finalAmount, netPointChange, merchant,
 		))
 
-		newTxID, err := models.CreateTransactionReturningID(ctx, tx, userID, finalAmount, "Paid", netPointChange, merchant, nil)
+		newTxID, err := repo.CreateTransactionReturningID(ctx, tx, userID, finalAmount, "Paid", netPointChange, merchant, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -230,7 +231,7 @@ func (s *TransactionService) VoidTransaction(ctx context.Context, userID int, ta
 	anyRes, logs, err := s.withTransaction(ctx, func(tx pgx.Tx, log *utils.TxLogger) (any, error) {
 		log.Raw(fmt.Sprintf("\n> Processing: VOID, Target Transaction: %d\n", targetTxID))
 
-		t, err := models.GetTransactionByIDForUpdate(ctx, tx, targetTxID)
+		t, err := repo.GetTransactionByIDForUpdate(ctx, tx, targetTxID)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return nil, NewTxError(http.StatusNotFound, "TX_NOT_FOUND", "Transaction not found")
@@ -245,7 +246,7 @@ func (s *TransactionService) VoidTransaction(ctx context.Context, userID int, ta
 		}
 
 		log.SQL(fmt.Sprintf("UPDATE Transactions SET status='Voided' WHERE transaction_id=%d;", targetTxID))
-		if err := models.UpdateTransactionStatus(ctx, tx, targetTxID, "Voided"); err != nil {
+		if err := repo.UpdateTransactionStatus(ctx, tx, targetTxID, "Voided"); err != nil {
 			return nil, err
 		}
 
@@ -288,7 +289,7 @@ func (s *TransactionService) RefundTransaction(ctx context.Context, userID int, 
 	anyRes, logs, err := s.withTransaction(ctx, func(tx pgx.Tx, log *utils.TxLogger) (any, error) {
 		log.Raw(fmt.Sprintf("\n> Processing: REFUND, Target Transaction: %d\n", targetTxID))
 
-		t, err := models.GetTransactionByIDForUpdate(ctx, tx, targetTxID)
+		t, err := repo.GetTransactionByIDForUpdate(ctx, tx, targetTxID)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return nil, NewTxError(http.StatusNotFound, "TX_NOT_FOUND", "Transaction not found")
@@ -302,7 +303,7 @@ func (s *TransactionService) RefundTransaction(ctx context.Context, userID int, 
 			return nil, NewTxError(http.StatusConflict, "TX_INVALID_STATUS", fmt.Sprintf("Cannot refund transaction with status: %s", t.Status))
 		}
 
-		u, err := models.GetUserByID(ctx, tx, userID)
+		u, err := repo.GetUserByID(ctx, tx, userID)
 		if err != nil {
 			return nil, err
 		}
@@ -310,7 +311,7 @@ func (s *TransactionService) RefundTransaction(ctx context.Context, userID int, 
 			return nil, NewTxError(http.StatusConflict, "INSUFFICIENT_POINTS", "Insufficient points to rollback transaction")
 		}
 
-		if err := models.UpdateTransactionStatus(ctx, tx, targetTxID, "Refunded"); err != nil {
+		if err := repo.UpdateTransactionStatus(ctx, tx, targetTxID, "Refunded"); err != nil {
 			return nil, err
 		}
 
@@ -323,7 +324,7 @@ func (s *TransactionService) RefundTransaction(ctx context.Context, userID int, 
 			userID, refundAmount, refundPoints, t.Merchant, targetTxID,
 		))
 
-		refundTxID, err := models.CreateTransactionReturningID(ctx, tx, userID, refundAmount, "Refunded", refundPoints, t.Merchant, &src)
+		refundTxID, err := repo.CreateTransactionReturningID(ctx, tx, userID, refundAmount, "Refunded", refundPoints, t.Merchant, &src)
 		if err != nil {
 			return nil, err
 		}

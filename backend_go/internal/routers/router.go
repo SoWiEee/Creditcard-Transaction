@@ -1,10 +1,11 @@
-package httpapi
+package routers
 
 import (
 	"net/http"
 
+	"backend_go/internal/middlewares"
+
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/cors"
 )
 
 type Handlers interface {
@@ -19,14 +20,7 @@ type Handlers interface {
 func NewRouter(h Handlers) http.Handler {
 	r := chi.NewRouter()
 
-	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"*"},
-		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
-		ExposedHeaders:   []string{"Link"},
-		AllowCredentials: false,
-		MaxAge:           300,
-	}))
+	r.Use(middlewares.CORS())
 
 	r.Get("/api/health", h.Health)
 	r.Get("/api/users/{id}", h.GetUserInfo)

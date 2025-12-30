@@ -1,13 +1,13 @@
 <template>
-  <transition name="slide-down">
-    <div v-if="toast.visible" class="toast-wrap" role="alert" aria-live="polite">
-      <div class="toast" :class="toast.type">
-        <div class="title">{{ toast.title }}</div>
-        <div class="msg">{{ toast.message }}</div>
-        <button class="close" aria-label="Close" @click="toast.hide()">×</button>
-      </div>
-    </div>
-  </transition>
+	<transition name="slide-down">
+		<div v-if="toast.visible" class="toast-wrap" role="alert" aria-live="polite">
+			<div class="toast" :class="toast.type">
+				<div class="title">{{ toast.title }}</div>
+				<div class="msg">{{ toast.message }}</div>
+				<button class="close" aria-label="Close" @click="toast.hide()">×</button>
+			</div>
+		</div>
+	</transition>
 </template>
 
 <script setup>
@@ -33,7 +33,7 @@ const toast = useToastStore()
   border-radius: 12px;
   padding: 12px 14px;
   box-shadow: 0 10px 30px rgba(0,0,0,.12);
-  background: #fff;
+  background: #7a7575;
   border: 1px solid rgba(0,0,0,.08);
   position: relative;
 }

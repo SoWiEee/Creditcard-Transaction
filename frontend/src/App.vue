@@ -39,6 +39,7 @@ import UserProfile from './components/UserProfile.vue'
 import ActionPanel from './components/ActionPanel.vue'
 import TransactionTable from './components/TransactionTable.vue'
 import SystemLog from './components/SystemLog.vue'
+import TopToast from './components/TopToast.vue'
 import api from './api/transactionService'
 
 const currentUserId = ref(1)

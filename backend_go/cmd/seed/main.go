@@ -73,7 +73,7 @@ func main() {
 
 	// 1. 清空舊資料
 	log.Println("🧹 Cleaning old data...")
-	_, err = tx.Exec(`TRUNCATE TABLE Transactions, Users RESTART IDENTITY CASCADE`)
+	_, err = tx.Exec(`TRUNCATE TABLE Points, Transactions, Users CASCADE`)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -120,6 +120,18 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
+	}
+
+	log.Println("🔧 Aligning Transactions identity sequence...")
+	_, err = tx.Exec(`
+		SELECT setval(
+			pg_get_serial_sequence('transactions','transaction_id'),
+			COALESCE((SELECT MAX(transaction_id) FROM transactions), 0),
+			true
+		);
+	`)
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	if err = tx.Commit(); err != nil {

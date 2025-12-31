@@ -28,7 +28,7 @@
 
 ---
 
-## 需求與依賴
+## Requirements
 
 - Go 1.24（此專案 `Dockerfile` 以 `golang:1.24-alpine` 為 build image）
 - PostgreSQL（Tables: `Users`, `Transactions`, `Points`）
@@ -36,90 +36,7 @@
 
 ---
 
-## 快速開始
-
-### 1) 準備環境變數
-
-你可以用 `.env`（範例已附），或手動 export。
-
-必要參數（擇一）：
-- **DB**：`DATABASE_URL`（推薦）
-- **Redis**：`REDIS_ADDR=host:port`（推薦）
-
-### 2) 啟動 DB / Redis（示例：使用 docker）
-
-```bash
-# Postgres
-
-docker run --rm --name pg \
-  -e POSTGRES_USER=cct_user \
-  -e POSTGRES_PASSWORD=cct_pass \
-  -e POSTGRES_DB=creditcard \
-  -p 5432:5432 postgres:16
-
-# Redis
-
-docker run --rm --name rds -p 6379:6379 redis:7
-```
-
-### 3) 建表（如果你沒有既有 schema）
-
-> 專案內沒有附 migration 檔，以下提供最小可運作 schema。
-
-```sql
-CREATE TABLE IF NOT EXISTS Users (
-  user_id INT PRIMARY KEY,
-  username VARCHAR(50) NOT NULL,
-  balance NUMERIC(10,2) DEFAULT 0.00,
-  current_points INT DEFAULT 0,
-  credit_limit NUMERIC(10,2) DEFAULT 10000.00
-);
-
-CREATE TABLE IF NOT EXISTS Transactions (
-  transaction_id SERIAL PRIMARY KEY,
-  user_id INT NOT NULL,
-  amount NUMERIC(10,2) NOT NULL,
-  status VARCHAR(20) CHECK (status IN ('Pending','Paid','Voided','Refunded')) NOT NULL,
-  merchant VARCHAR(50),
-  point_change INT DEFAULT 0,
-  source_transaction_id INT DEFAULT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (user_id) REFERENCES Users(user_id),
-  FOREIGN KEY (source_transaction_id) REFERENCES Transactions(transaction_id)
-);
-
-CREATE TABLE IF NOT EXISTS Points (
-  log_id SERIAL PRIMARY KEY,
-  user_id INT NOT NULL,
-  transaction_id INT,
-  change_amount INT NOT NULL,
-  reason VARCHAR(255) NOT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (user_id) REFERENCES Users(user_id),
-  FOREIGN KEY (transaction_id) REFERENCES Transactions(transaction_id)
-);
-```
-
-### 4) Seed（可選）
-
-`cmd/seed` 會讀取 `db/seed/user.csv` 與 `db/seed/transaction.csv`，並清空舊資料後重新匯入。
-
-```bash
-# 需要先設定 DATABASE_URL
-
-go run ./cmd/seed
-```
-
-### 5) 啟動 API server
-
-```bash
-go run ./cmd/server
-# 預設 PORT=3000
-```
-
----
-
-## API 介面
+## API Endpoints
 
 Base path：`/api`
 
@@ -369,34 +286,6 @@ controller.RefundTx
 ```
 
 其中 `logs` 是 `TxLogger` 產生的 debug 訊息（包含模擬 SQL logs / info logs），方便你在前端或測試時顯示「資料流/執行軌跡」。
-
----
-
-## Docker（build / run）
-
-```bash
-# build
-
-docker build -t backend_go .
-
-# run（請確保你有提供 DATABASE_URL + Redis 設定）
-
-docker run --rm -p 3000:3000 \
-  -e PORT=3000 \
-  -e DATABASE_URL='postgres://cct_user:cct_pass@host.docker.internal:5432/creditcard' \
-  -e REDIS_ADDR='host.docker.internal:6379' \
-  backend_go
-```
-
-如果你想 container 起來就 seed：
-
-```bash
-docker run --rm -p 3000:3000 \
-  -e RUN_SEED=1 \
-  -e DATABASE_URL='...' \
-  -e REDIS_ADDR='...' \
-  backend_go
-```
 
 ---
 

@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"math"
 	"net/http"
+	"time"
 
 	"backend_go/internal/models"
 	"backend_go/internal/repo"
@@ -175,37 +177,19 @@ func (s *TransactionService) ProcessPayment(ctx context.Context, userID int, amo
 		log.Info(fmt.Sprintf("[Rewards] Merchant: %s (x%g). Points Earned: floor(%.2f)*%g = %d.", merchant, mult, finalAmount, mult, pointsEarned))
 		netPointChange := pointsEarned - pointsRedeemed
 
+		// 1. Create Transaction with 'Pending' status
+		// We do NOT update user balance or points yet. This happens at settlement.
 		log.SQL(fmt.Sprintf(
-			"INSERT INTO Transactions (user_id, amount, status, point_change, merchant, source_transaction_id) VALUES (%d, %.2f, 'Paid', %d, '%s', NULL) RETURNING transaction_id;",
+			"INSERT INTO Transactions (user_id, amount, status, point_change, merchant, source_transaction_id) VALUES (%d, %.2f, 'Pending', %d, '%s', NULL) RETURNING transaction_id;",
 			userID, finalAmount, netPointChange, merchant,
 		))
 
-		newTxID, err := repo.CreateTransactionReturningID(ctx, tx, userID, finalAmount, "Paid", netPointChange, merchant, nil)
+		newTxID, err := repo.CreateTransactionReturningID(ctx, tx, userID, finalAmount, "Pending", netPointChange, merchant, nil)
 		if err != nil {
 			return nil, err
 		}
 
-		// Points table insert (optional)
-		if pointsRedeemed > 0 {
-			log.SQL(fmt.Sprintf("INSERT INTO Points (Redeemed: -%d);", pointsRedeemed))
-			if _, err := tx.Exec(ctx, `INSERT INTO Points (user_id, transaction_id, change_amount, reason) VALUES ($1,$2,$3,$4)`, userID, newTxID, -pointsRedeemed, "Redeemed"); err != nil {
-				return nil, err
-			}
-		}
-		if pointsEarned > 0 {
-			log.SQL(fmt.Sprintf("INSERT INTO Points (Earned: +%d);", pointsEarned))
-			reason := fmt.Sprintf("Earned (%s x%g)", merchant, mult)
-			if _, err := tx.Exec(ctx, `INSERT INTO Points (user_id, transaction_id, change_amount, reason) VALUES ($1,$2,$3,$4)`, userID, newTxID, pointsEarned, reason); err != nil {
-				return nil, err
-			}
-		}
-
-		log.SQL(fmt.Sprintf("UPDATE Users SET balance = balance + %.2f, current_points = current_points + %d WHERE user_id = %d;", finalAmount, netPointChange, userID))
-		if _, err := tx.Exec(ctx, `UPDATE Users SET balance = balance + $1, current_points = current_points + $2 WHERE user_id = $3`, finalAmount, netPointChange, userID); err != nil {
-			return nil, err
-		}
-
-		log.Info(fmt.Sprintf("Transaction %d completed. Net Points: %d", newTxID, netPointChange))
+		log.Info(fmt.Sprintf("Transaction %d created (Pending). Settlement in 10s.", newTxID))
 		return &TxResult{TransactionID: newTxID, FinalAmount: finalAmount, PointsEarned: pointsEarned, PointsRedeemed: pointsRedeemed}, nil
 	})
 
@@ -223,7 +207,97 @@ func (s *TransactionService) ProcessPayment(ctx context.Context, userID int, amo
 
 	res := anyRes.(*TxResult)
 	res.Logs = logs
+
+	// Start background settlement
+	go s.SettleTransaction(res.TransactionID)
+
 	return res, nil
+}
+
+// SettleTransaction waits 10s then finalizes the transaction
+func (s *TransactionService) SettleTransaction(txID int64) {
+	time.Sleep(10 * time.Second)
+
+	ctx := context.Background()
+
+	// Reuse withTransaction for consistent logging and transaction management
+	_, logs, err := s.withTransaction(ctx, func(tx pgx.Tx, log *utils.TxLogger) (any, error) {
+		log.Raw(fmt.Sprintf("\n> Processing: SETTLE Transaction: %d\n", txID))
+
+		// 1. Lock Transaction
+		t, err := repo.GetTransactionByIDForUpdate(ctx, tx, int(txID))
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				log.Info("Transaction not found during settlement.")
+				return nil, nil
+			}
+			return nil, err
+		}
+
+		if t.Status != "Pending" {
+			log.Info(fmt.Sprintf("Transaction %d is '%s', skipping settlement.", txID, t.Status))
+			return nil, nil
+		}
+
+		// 2. Lock User & Check Limit
+
+		user, err := repo.GetUserByID(ctx, tx, t.UserID)
+		if err != nil {
+			return nil, err
+		}
+
+		if user.Balance+t.Amount > user.CreditLimit {
+			log.Info(fmt.Sprintf("Insufficient credit (Bal: %.2f + Amt: %.2f > Lim: %.2f). Voiding.", user.Balance, t.Amount, user.CreditLimit))
+			if err := repo.UpdateTransactionStatus(ctx, tx, int(txID), "Voided"); err != nil {
+				return nil, err
+			}
+			return nil, nil // Commit the Voided status
+		}
+
+		// 3. Apply Changes
+		mult := merchantRates[t.Merchant]
+		if mult == 0 {
+			mult = 1
+		}
+		pointsEarned := int(math.Floor(t.Amount * mult))
+		pointsRedeemed := pointsEarned - t.PointChange
+
+		log.SQL(fmt.Sprintf("UPDATE Users SET balance += %.2f, points += %d", t.Amount, t.PointChange))
+		if _, err := repo.UpdateUserBalanceAndPoints(ctx, tx, t.UserID, t.Amount, t.PointChange); err != nil {
+			return nil, err
+		}
+
+		// 4. Insert Points Logs
+		if pointsRedeemed > 0 {
+			log.SQL(fmt.Sprintf("INSERT INTO Points (Redeemed: -%d)", pointsRedeemed))
+			if _, err := tx.Exec(ctx, `INSERT INTO Points (user_id, transaction_id, change_amount, reason) VALUES ($1,$2,$3,$4)`, t.UserID, t.TransactionID, -pointsRedeemed, "Redeemed"); err != nil {
+				return nil, err
+			}
+		}
+		if pointsEarned > 0 {
+			reason := fmt.Sprintf("Earned (%s x%g)", t.Merchant, mult)
+			log.SQL(fmt.Sprintf("INSERT INTO Points (Earned: +%d)", pointsEarned))
+			if _, err := tx.Exec(ctx, `INSERT INTO Points (user_id, transaction_id, change_amount, reason) VALUES ($1,$2,$3,$4)`, t.UserID, t.TransactionID, pointsEarned, reason); err != nil {
+				return nil, err
+			}
+		}
+
+		// 5. Update Status
+		log.SQL("UPDATE Transactions SET status='Paid'")
+		if err := repo.UpdateTransactionStatus(ctx, tx, int(txID), "Paid"); err != nil {
+			return nil, err
+		}
+
+		log.Info("Settlement successful.")
+		return nil, nil
+	})
+
+	if err != nil {
+		log.Printf("[SETTLE] Error settling tx %d: %v", txID, err)
+		for _, l := range logs {
+			log.Println(l)
+		}
+	}
 }
 
 // ---- VOID ----
@@ -241,32 +315,40 @@ func (s *TransactionService) VoidTransaction(ctx context.Context, userID int, ta
 		if t.UserID != userID {
 			return nil, NewTxError(http.StatusForbidden, "TX_FORBIDDEN", "Unauthorized access")
 		}
-		if t.Status == "Voided" || t.Status == "Refunded" {
-			return nil, NewTxError(http.StatusConflict, "TX_INVALID_STATUS", fmt.Sprintf("Cannot void transaction with status: %s", t.Status))
-		}
 
-		log.SQL(fmt.Sprintf("UPDATE Transactions SET status='Voided' WHERE transaction_id=%d;", targetTxID))
-		if err := repo.UpdateTransactionStatus(ctx, tx, targetTxID, "Voided"); err != nil {
-			return nil, err
-		}
+		if t.Status == "Pending" {
+			// Voiding a pending transaction: just update status, no money movement
+			log.Info("Voiding PENDING transaction. No balance/points reverted.")
+			if err := repo.UpdateTransactionStatus(ctx, tx, targetTxID, "Voided"); err != nil {
+				return nil, err
+			}
+			return &VoidResult{Success: true, VoidedAmount: 0, RestoredPoints: 0}, nil
+		} else if t.Status == "Paid" {
+			// Existing logic for Paid
+			log.SQL(fmt.Sprintf("UPDATE Transactions SET status='Voided' WHERE transaction_id=%d;", targetTxID))
+			if err := repo.UpdateTransactionStatus(ctx, tx, targetTxID, "Voided"); err != nil {
+				return nil, err
+			}
 
 		log.Info(fmt.Sprintf("Restoring Balance: +$%.2f", t.Amount))
 		if _, err := tx.Exec(ctx, `UPDATE Users SET balance = balance + $1 WHERE user_id=$2`, t.Amount, userID); err != nil {
-			return nil, err
-		}
-
-		reversePointChange := -1 * t.PointChange
-		if reversePointChange != 0 {
-			log.Info(fmt.Sprintf("Restoring Points: %d", reversePointChange))
-			if _, err := tx.Exec(ctx, `UPDATE Users SET current_points = current_points + $1 WHERE user_id=$2`, reversePointChange, userID); err != nil {
 				return nil, err
 			}
-			if _, err := tx.Exec(ctx, `INSERT INTO Points (user_id, transaction_id, change_amount, reason) VALUES ($1,$2,$3,$4)`, userID, targetTxID, reversePointChange, "Void Reversal"); err != nil {
-				return nil, err
-			}
-		}
 
-		return &VoidResult{Success: true, VoidedAmount: t.Amount, RestoredPoints: reversePointChange}, nil
+			reversePointChange := -1 * t.PointChange
+			if reversePointChange != 0 {
+				log.Info(fmt.Sprintf("Restoring Points: %d", reversePointChange))
+				if _, err := tx.Exec(ctx, `UPDATE Users SET current_points = current_points + $1 WHERE user_id=$2`, reversePointChange, userID); err != nil {
+					return nil, err
+				}
+				if _, err := tx.Exec(ctx, `INSERT INTO Points (user_id, transaction_id, change_amount, reason) VALUES ($1,$2,$3,$4)`, userID, targetTxID, reversePointChange, "Void Reversal"); err != nil {
+					return nil, err
+				}
+			}
+			return &VoidResult{Success: true, VoidedAmount: t.Amount, RestoredPoints: reversePointChange}, nil
+		} else {
+			return nil, NewTxError(http.StatusConflict, "TX_INVALID_STATUS", fmt.Sprintf("Cannot void transaction with status: %s", t.Status))
+		}
 	})
 
 	if err != nil {

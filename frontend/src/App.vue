@@ -133,7 +133,13 @@ const onPay = async (payload) => {
 		})
 
 		appendBackendLogs(res.logs) 
+		// 1. 立即刷新一次，讓使用者看到 "Pending" 狀態的交易
 		await refreshData()
+
+		// 2. 設定計時器，在 11 秒後再次刷新，以取得 "Paid" 狀態
+		setTimeout(() => {
+			refreshData()
+		}, 11000) // 後端延遲 10 秒 + 1 秒網路緩衝
 	} catch (error) {
 		if (error.response?.data?.logs) {
 			appendBackendLogs(error.response.data.logs)

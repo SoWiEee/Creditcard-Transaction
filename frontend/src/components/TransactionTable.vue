@@ -34,6 +34,7 @@ const getStatusClass = (status) => {
           <th>Date</th>
           <th>Amount</th>
           <th>Status</th>
+          <th>Merchant</th>
           <th>Points</th>
           <th>Action</th>
         </tr>
@@ -42,7 +43,7 @@ const getStatusClass = (status) => {
         <tr v-for="tx in transactions" :key="tx.transaction_id">
           <td>#{{ tx.transaction_id }}</td>
           <td>{{ formatDate(tx.created_at) }}</td>
-          
+
           <td :class="{ 'text-refund': tx.amount < 0 }">
             {{ tx.amount < 0 ? '' : '$' }}{{ tx.amount }}
           </td>
@@ -53,6 +54,8 @@ const getStatusClass = (status) => {
             </span>
           </td>
           
+          <td>{{ tx.merchant || '-' }}</td>
+
           <td :class="tx.point_change < 0 ? 'text-red' : 'text-green'">
             {{ tx.point_change > 0 ? '+' : '' }}{{ tx.point_change }}
           </td>

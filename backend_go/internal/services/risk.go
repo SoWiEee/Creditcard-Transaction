@@ -117,3 +117,22 @@ func (r *RiskEngine) EvaluatePaymentRisk(ctx context.Context, q repo.Querier, us
 	log.Info("[RISK] [V] All Risk Checks Passed.")
 	return nil
 }
+
+func (r *RiskEngine) EvaluateRefundRisk(ctx context.Context, q repo.Querier, userID int, log *utils.TxLogger) error {
+	// Refund abuse (DB)
+	var refundCount int64
+	refundSQL := fmt.Sprintf(
+		`SELECT COUNT(*) FROM Transactions WHERE user_id = $1 AND status = 'Refunded' AND created_at > NOW() - INTERVAL '%s'`,
+		r.Rules.RefundWindowSQL,
+	)
+	if err := q.QueryRow(ctx, refundSQL, userID).Scan(&refundCount); err != nil {
+		log.Info(fmt.Sprintf("[RISK] ERROR: refund count query failed: %v", err))
+		return NewTxError(http.StatusInternalServerError, "INTERNAL_ERROR", "Internal Server Error")
+	}
+	if refundCount >= r.Rules.RefundLimit {
+		log.Info(fmt.Sprintf("[RISK] FAIL: User has %d refunds in 24h. Refund blocked.", refundCount))
+		return NewTxError(http.StatusForbidden, "RISK_REFUND_ABUSE", "Account temporarily frozen due to excessive refunds")
+	}
+	log.Info(fmt.Sprintf("[RISK] PASS: Refund check (%d/%d in 24h).", refundCount, r.Rules.RefundLimit))
+	return nil
+}

@@ -371,6 +371,11 @@ func (s *TransactionService) RefundTransaction(ctx context.Context, userID int, 
 	anyRes, logs, err := s.withTransaction(ctx, func(tx pgx.Tx, log *utils.TxLogger) (any, error) {
 		log.Raw(fmt.Sprintf("\n> Processing: REFUND, Target Transaction: %d\n", targetTxID))
 
+		//Check refund abuse
+		if err := s.Risk.EvaluateRefundRisk(ctx, tx, userID, log); err != nil {
+			return nil, err
+		}
+
 		t, err := repo.GetTransactionByIDForUpdate(ctx, tx, targetTxID)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -389,6 +394,7 @@ func (s *TransactionService) RefundTransaction(ctx context.Context, userID int, 
 		if err != nil {
 			return nil, err
 		}
+
 		if u.CurrentPoints < t.PointChange {
 			return nil, NewTxError(http.StatusConflict, "INSUFFICIENT_POINTS", "Insufficient points to rollback transaction")
 		}

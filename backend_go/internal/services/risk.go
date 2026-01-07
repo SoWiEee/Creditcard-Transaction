@@ -23,21 +23,21 @@ type RiskRules struct {
 }
 
 func DefaultRules(loadtest bool) RiskRules {
-	if loadtest {
-		return RiskRules{
-			MaxAmount:          10000,
-			MinAmount:          1,
-			VelocityLimit:      1 << 60,
-			VelocityWindow:     time.Second,
-			DuplicateWindowSQL: "1 second",
-			RefundLimit:        1 << 60,
-			RefundWindowSQL:    "24 hours",
-		}
-	}
+	// if loadtest {
+	// 	return RiskRules{
+	// 		MaxAmount:          10000,
+	// 		MinAmount:          1,
+	// 		VelocityLimit:      1 << 60,
+	// 		VelocityWindow:     time.Second,
+	// 		DuplicateWindowSQL: "1 second",
+	// 		RefundLimit:        1 << 60,
+	// 		RefundWindowSQL:    "24 hours",
+	// 	}
+	// }
 	return RiskRules{
 		MaxAmount:          10000,
 		MinAmount:          1,
-		VelocityLimit:      3,
+		VelocityLimit:      30,
 		VelocityWindow:     60 * time.Second,
 		DuplicateWindowSQL: "5 minutes",
 		RefundLimit:        3,

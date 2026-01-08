@@ -129,7 +129,7 @@ func (r *RiskEngine) EvaluateRefundRisk(ctx context.Context, q repo.Querier, use
 		log.Info(fmt.Sprintf("[RISK] ERROR: refund count query failed: %v", err))
 		return NewTxError(http.StatusInternalServerError, "INTERNAL_ERROR", "Internal Server Error")
 	}
-	if refundCount >= r.Rules.RefundLimit {
+	if refundCount > r.Rules.RefundLimit {
 		log.Info(fmt.Sprintf("[RISK] FAIL: User has %d refunds in 24h. Refund blocked.", refundCount))
 		return NewTxError(http.StatusForbidden, "RISK_REFUND_ABUSE", "Account temporarily frozen due to excessive refunds")
 	}

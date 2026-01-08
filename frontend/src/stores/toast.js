@@ -9,7 +9,7 @@ export const useToastStore = defineStore('toast', {
 		_timer: null,
 	}),
 	actions: {
-		show({ title = '提示', message = '', type = 'warning', duration = 2000 } = {}) {
+		show({ title = '提示', message = '', type = 'warning', duration = 3000 } = {}) {
 			this.title = title
 			this.message = message
 			this.type = type

@@ -33,7 +33,7 @@ const toast = useToastStore()
   border-radius: 12px;
   padding: 12px 14px;
   box-shadow: 0 10px 30px rgba(0,0,0,.12);
-  background: #7a7575;
+  background: #464343;
   border: 1px solid rgba(0,0,0,.08);
   position: relative;
 }

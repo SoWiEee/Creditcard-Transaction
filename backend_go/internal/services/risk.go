@@ -108,7 +108,7 @@ func (r *RiskEngine) EvaluatePaymentRisk(ctx context.Context, q repo.Querier, us
 		log.Info(fmt.Sprintf("[RISK] ERROR: duplicate count query failed: %v", err))
 		return NewTxError(http.StatusInternalServerError, "INTERNAL_ERROR", "Internal Server Error")
 	}
-	if dupCount > 0 {
+	if dupCount > 1 {
 		log.Info("[RISK] FAIL: Duplicate transaction detected.")
 		return NewTxError(http.StatusConflict, "RISK_DUPLICATE", "Potential duplicate transaction detected")
 	}

@@ -1,16 +1,13 @@
 # Creditcard-Transaction
 
 - [Deepwiki](https://deepwiki.com/SoWiEee/Creditcard-Transaction/tree/main)
-- [Test Website](https://dbdev.mintice.blog/) (not working)
-
-> 信用卡交易與點數系統開發規格書
 
 # Project Overview
 
 本系統旨在模擬信用卡核心交易流程，包含授權 (Authorization)、結算 (Settlement)、作廢 (Void) 與退款 (Refund)。系統必須嚴格遵守 ACID 原則，確保帳戶餘額與紅利點數在任何交易狀態下的一致性。
 - 前端架構：Vue 3 + Vite + Bun (Single Page Application)
-- 後端架構：Node.js/Bun (REST API)
-- 資料庫：PostgreSQL
+- 後端架構：Go Chi (REST API)
+- 資料庫：PostgreSQL + Redis
 
 # Docker Development
 

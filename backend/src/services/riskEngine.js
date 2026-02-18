@@ -1,4 +1,3 @@
-import pool from '../config/db.js';
 import redis from '../config/redis.js';
 
 const RULES = {
@@ -10,6 +9,22 @@ const RULES = {
     DUPLICATE_WINDOW: '5 minutes',  // 重複交易檢查視窗
     REFUND_LIMIT: 3,                // 24 小時內最多退款次數
     REFUND_WINDOW: '24 hours'
+};
+
+// redis quick check
+export const evaluateVelocity = async (userId, logger) => {
+    const velocityKey = `risk:velocity:user:${userId}`;
+    const currentCount = await redis.incr(velocityKey);
+
+    if (currentCount === 1) {
+        await redis.expire(velocityKey, RULES.VELOCITY_WINDOW_SEC);
+    }
+
+    if (currentCount > RULES.VELOCITY_LIMIT) {
+        logger.info(`[RISK] FAIL: Velocity limit reached (Redis: ${currentCount}).`);
+        throw new Error(`Risk Control: Too many transactions. Please try again later.`);
+    }
+    logger.info(`[RISK] PASS: Velocity check (Redis: ${currentCount}/${RULES.VELOCITY_LIMIT}).`);
 };
 
 export const evaluatePaymentRisk = async (client, userId, amount, merchant, logger) => {
@@ -26,23 +41,7 @@ export const evaluatePaymentRisk = async (client, userId, amount, merchant, logg
         throw new Error(`Risk Control: Transaction amount is too low (Min: $${RULES.MIN_AMOUNT}).`);
     }
 
-    logger.info('[RISK] PASS: Amount limits check.');
-
-    // 2. 同一 User ID 在 1 分鐘內不得超過 3 筆交易
-    const velocityKey = `risk:velocity:user:${userId}`; // Redis Key
-    const currentCount = await redis.incr(velocityKey); // atomic opt
-
-    if (currentCount === 1) {
-        await redis.expire(velocityKey, RULES.VELOCITY_WINDOW_SEC);
-    }
-    if (currentCount > RULES.VELOCITY_LIMIT) {
-        logger.info(`[RISK] FAIL: Velocity limit reached (Redis: ${currentCount} tx in 1 min).`);
-        throw new Error(`Risk Control: Too many transactions in short period. Please try again later.`);
-    }
-
-    logger.info(`[RISK] PASS: Velocity check (Redis: ${currentCount}/${RULES.VELOCITY_LIMIT}).`);
-
-    // 3. 使用者在過去 24 小時內的退款次數
+    // 2. 使用者在過去 24 小時內的退款次數
     const refundRes = await client.query(
         `SELECT COUNT(*) as count FROM Transactions 
          WHERE user_id = $1 AND status = 'Refunded' 
@@ -55,9 +54,8 @@ export const evaluatePaymentRisk = async (client, userId, amount, merchant, logg
         logger.info(`[RISK] FAIL: User has ${refundCount} refunds in 24h. Account temporarily frozen.`);
         throw new Error(`Security Alert: Account temporarily frozen due to excessive refunds (${refundCount}/${RULES.REFUND_LIMIT} in 24h).`);
     }
-    logger.info(`[RISK] PASS: Refund history check (${refundCount} refunds in 24h).`);
 
-    // 4. 同一 User, 同一 Merchant, 5 分鐘內, 相同金額
+    // 3. 同一 User, 同一 Merchant, 5 分鐘內, 相同金額
     const duplicateRes = await client.query(
         `SELECT COUNT(*) as count FROM Transactions 
          WHERE user_id = $1 
@@ -72,7 +70,6 @@ export const evaluatePaymentRisk = async (client, userId, amount, merchant, logg
         logger.info(`[RISK] FAIL: Duplicate transaction detected (Same amount to ${merchant} in 5 min).`);
         throw new Error(`Risk Control: Potential duplicate transaction detected.`);
     }
-    logger.info('[RISK] PASS: Duplicate transaction check.');
 
     logger.info('[RISK] [V] All Risk Checks Passed.');
     return true;

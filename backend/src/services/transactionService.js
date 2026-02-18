@@ -68,10 +68,13 @@ export const getTransactionHistory = async (userId) => {
 };
 
 export const processPayment = async (userId, amount, merchant, usePoints) => {
+    // redis cache risk
+    const preCheckLogger = { info: console.log, raw: () => {} };
+    await RiskEngine.evaluateVelocity(userId, preCheckLogger);
+
     return withTransaction(async (client, logger) => {
         logger.raw(`\n> Processing: PAY at ${merchant}, User: ${userId}, Total: $${amount}\n`);
 
-        // 將 client 和 logger 傳進去，這樣 RiskEngine 可以查資料庫並寫入 System Log
         await RiskEngine.evaluatePaymentRisk(client, userId, amount, merchant, logger);
 
         // 1. 取得使用者資料
@@ -121,8 +124,7 @@ export const processPayment = async (userId, amount, merchant, usePoints) => {
         const pointsEarned = Math.floor(finalAmount * 1 * multiplier);
 
         logger.info(`[Rewards] Merchant: ${merchant} (x${multiplier}). Points Earned: ${Math.floor(finalAmount)} * ${multiplier} = ${pointsEarned}.`);
-
-        // --- DB 寫入操作 ---
+        
 
         // A. 建立交易紀錄
         const maxIdRes = await client.query('SELECT MAX(transaction_id) FROM Transactions');
